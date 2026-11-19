@@ -42,8 +42,9 @@ class LiveService : Service() {
         if (!started) {
             started = true
             getSystemService(NotificationManager::class.java).createNotificationChannel(
-                NotificationChannel(CHANNEL, "Live camera", NotificationManager.IMPORTANCE_LOW).apply {
-                    description = "Shows while the glasses camera is streaming to the owner"
+                NotificationChannel(CHANNEL, "Live camera", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                    setSound(null, null)
+                    description = "Shows while FCCTV is ready or the glasses camera is sending to the owner"
                     setShowBadge(false)
                 }
             )
@@ -65,8 +66,9 @@ class LiveService : Service() {
 
     private fun build(s: LiveState): Notification {
         val title = when (s.phase) {
-            LivePhase.LIVE -> "● LIVE · Video is streaming to the owner"
-            LivePhase.SNAPSHOT -> "● ON DUTY · Glasses photo every ${s.snapshotEverySec}s to the owner"
+            LivePhase.LIVE -> if (s.recording) "● RECORDING VIDEO for the owner" else "● LIVE · Owner is watching the camera"
+            LivePhase.SNAPSHOT -> "● RECORDING · Photo every ${s.snapshotEverySec}s to the owner"
+            LivePhase.STANDBY -> "FCCTV ready · camera off"
             LivePhase.STARTING -> "Starting camera…"
             LivePhase.RETRYING -> "Reconnecting camera…"
             LivePhase.PAUSED -> "Camera paused"
@@ -89,7 +91,7 @@ class LiveService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .addAction(0, "Stop duty", stop)
+            .addAction(0, "Turn FCCTV off", stop)
             .build()
     }
 

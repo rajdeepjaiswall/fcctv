@@ -21,6 +21,12 @@ data class ServerConfig(
     val workEnd: String = "",
     val active: Boolean = true,
     val reachedServer: Boolean = false,
+    /** Owner has started a recording session for this worker. */
+    val duty: Boolean = false,
+    val sessionId: String? = null,
+    /** "images" or "video". */
+    val captureMode: String = "images",
+    val videoSaveEverySec: Int = 3,
 )
 
 class UnpairedException : IOException("This phone is no longer paired. Ask the owner for a new pairing code.")
@@ -86,14 +92,16 @@ class Backend(private val net: InternetNetwork) {
             workEnd = r.optString("work_end"),
             active = r.optBoolean("active", true),
             reachedServer = true,
+            duty = r.optBoolean("duty"),
+            sessionId = r.optString("session_id").takeIf { it.isNotBlank() && it != "null" },
+            captureMode = if (r.optString("capture_mode") == "video") "video" else "images",
+            videoSaveEverySec = r.optInt("video_save_every_sec", 3).coerceIn(1, 30),
         )
     }
 
-    suspend fun startSession(token: String): String =
-        post("session", token, JSONObject().put("action", "start").toString().toRequestBody(jsonType)).getString("session_id")
-
-    suspend fun stopSession(token: String, sessionId: String) {
-        post("session", token, JSONObject().put("action", "stop").put("session_id", sessionId).toString().toRequestBody(jsonType))
+    /** Worker switched FCCTV off: the server ends any running session and analyses it. */
+    suspend fun workerOff(token: String) {
+        post("session", token, JSONObject().put("action", "worker_off").toString().toRequestBody(jsonType))
     }
 
     suspend fun uploadFrame(token: String, jpeg: ByteArray, live: Boolean, fromLive: Boolean, sessionId: String?, battery: Int?, takenAt: Long) {

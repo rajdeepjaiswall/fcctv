@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import Shell from "@/components/Shell";
+import SessionControls from "@/components/SessionControls";
 import { api, ago, liveStatus, stableUrl, type WorkerRow } from "@/lib/client";
 
 /** Live grid: every worker's latest frame, refreshed every 2 s. */
@@ -21,10 +22,6 @@ export default function LiveGrid() {
     return () => { stop = true; clearInterval(t); };
   }, []);
 
-  const toggleLive = async (w: WorkerRow) => {
-    await api(`/api/workers/${w.id}`, { method: "PATCH", body: JSON.stringify({ live: !w.live_requested }) });
-    setRows((r) => r?.map((x) => (x.id === w.id ? { ...x, live_requested: !w.live_requested } : x)) ?? r);
-  };
 
   const active = rows?.filter((w) => w.active) ?? [];
   return (
@@ -53,13 +50,9 @@ export default function LiveGrid() {
                   </span>
                 </div>
                 {w.status_detail && <div className="muted small" style={{ marginTop: 4 }}>{w.status_detail}</div>}
-                <div className="row" style={{ marginTop: 10 }}>
-                  {w.paired_at && (
-                    <button className={`btn ${w.live_requested ? "brown" : ""}`} onClick={() => toggleLive(w)}>
-                      {w.live_requested ? "Stop live video" : "Watch live video"}
-                    </button>
-                  )}
-                  <Link className="btn ghost" href={`/worker/${w.id}`}>Details</Link>
+                <div style={{ marginTop: 10 }}>
+                  <SessionControls workerId={w.id} paired={!!w.paired_at} online={!!w.last_seen && now - new Date(w.last_seen).getTime() < 60_000}
+                    sessionId={w.active_session_id} mode={w.capture_mode} liveRequested={!!w.live_requested} />
                 </div>
               </div>
             </div>

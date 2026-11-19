@@ -6,11 +6,12 @@ export const dynamic = "force-dynamic";
 
 /** Never send secret keys back to the browser. */
 function publicView(s: Settings) {
-  const { r2_secret_key, r2_access_key, ...rest } = s;
+  const { r2_secret_key, r2_access_key, gemini_api_key, ...rest } = s;
   return {
     ...rest,
     r2_access_key_hint: r2_access_key ? `…${r2_access_key.slice(-4)}` : null,
     r2_has_secret: !!r2_secret_key,
+    gemini_key_hint: gemini_api_key ? `…${gemini_api_key.slice(-4)}` : null,
   };
 }
 
@@ -34,6 +35,13 @@ export const PUT = admin(async (req: Request) => {
     r2_access_key = ${text(b.r2_access_key, cur.r2_access_key)},
     r2_secret_key = ${text(b.r2_secret_key, cur.r2_secret_key)},
     r2_bucket = ${text(b.r2_bucket, cur.r2_bucket)},
+    gemini_api_key = ${b.gemini_api_key === "__clear__" ? null : text(b.gemini_api_key, cur.gemini_api_key)},
+    ai_model = ${typeof b.ai_model === "string" && /^[\w.\-]{3,80}$/.test(b.ai_model) ? b.ai_model : cur.ai_model},
+    ai_language = ${b.ai_language === "hi" || b.ai_language === "en" ? b.ai_language : cur.ai_language},
+    summary_batch = ${int(b.summary_batch, 3, 60, cur.summary_batch)},
+    auto_analyse = ${typeof b.auto_analyse === "boolean" ? b.auto_analyse : cur.auto_analyse},
+    default_capture_mode = ${b.default_capture_mode === "video" || b.default_capture_mode === "images" ? b.default_capture_mode : cur.default_capture_mode},
+    video_save_every_sec = ${int(b.video_save_every_sec, 1, 30, cur.video_save_every_sec)},
     updated_at = now() where id = 1`;
   clearR2Cache();
   const r2Error = b.testR2 ? await testR2() : null;

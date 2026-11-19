@@ -16,6 +16,7 @@ import com.getdown.fcctv.net.InternetNetwork
 import com.getdown.fcctv.net.ServerConfig
 import com.getdown.fcctv.net.UnpairedException
 import com.getdown.fcctv.net.Uploader
+import com.getdown.fcctv.stream.Jpeg
 import com.getdown.fcctv.stream.MjpegServer
 import com.getdown.fcctv.stream.RtspFrameSource
 import kotlinx.coroutines.CompletableDeferred
@@ -35,7 +36,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
 /** What the camera is doing right now. */
-enum class LivePhase { OFF, STARTING, SNAPSHOT, LIVE, RETRYING, PAUSED }
+/** OFF = app off · STANDBY = ready, camera off, waiting for the owner · SNAPSHOT/LIVE = recording/streaming. */
+enum class LivePhase { OFF, STANDBY, STARTING, SNAPSHOT, LIVE, RETRYING, PAUSED }
 
 data class LiveState(
     val link: LinkState = LinkState.DISCONNECTED,
@@ -53,6 +55,8 @@ data class LiveState(
     val uploaded: Long = 0,
     val uploadError: String? = null,
     val snapshotEverySec: Int = 10,
+    val recording: Boolean = false,
+    val captureMode: String = "images",
 )
 
 /**
@@ -87,7 +91,6 @@ object LiveController {
     private val config = MutableStateFlow(ServerConfig())
 
     @Volatile private var duty = false
-    @Volatile private var sessionId: String? = null
     private var dutyJob: Job? = null
     private var heartbeatJob: Job? = null
     private var uploader: Uploader? = null
@@ -156,8 +159,8 @@ object LiveController {
         acquireWake()
         openMjpeg()
         net.start()
-        _state.update { it.copy(phase = LivePhase.STARTING, detail = "Starting duty", uploadError = null) }
-        uploader = Uploader(scope, backend, { prefs.deviceToken }, { sessionId }) { ok, _, err ->
+        _state.update { it.copy(phase = LivePhase.STANDBY, detail = "Ready. The owner can start recording.", uploadError = null) }
+        uploader = Uploader(scope, backend, { prefs.deviceToken }, { config.value.sessionId }) { ok, _, err ->
             _state.update {
                 if (ok) it.copy(uploaded = it.uploaded + 1, uploadError = null, online = true)
                 else it.copy(uploadError = err, online = false)
@@ -179,11 +182,12 @@ object LiveController {
         runCatching { mjpeg?.close() }; mjpeg = null
         releaseWake()
         _frame.value = null
-        _state.update { it.copy(phase = LivePhase.OFF, detail = "Off duty", fps = 0.0) }
-        val token = prefs.deviceToken; val sid = sessionId; sessionId = null
+        _state.update { it.copy(phase = LivePhase.OFF, detail = "FCCTV is off", fps = 0.0, recording = false) }
+        config.value = config.value.copy(duty = false, liveRequested = false, sessionId = null)
+        val token = prefs.deviceToken
         scope.launch {
             if (token != null) {
-                runCatching { if (sid != null) backend.stopSession(token, sid) }
+                runCatching { backend.workerOff(token) }
                 runCatching { backend.heartbeat(token, status("off")) }
             }
             net.stop()
@@ -212,24 +216,32 @@ object LiveController {
         LivePhase.LIVE -> "live"
         LivePhase.PAUSED -> "paused"
         LivePhase.OFF -> "off"
-        else -> "snapshot"
+        LivePhase.STANDBY -> "standby"
+        else -> if (config.value.duty) "snapshot" else "standby"
     }
 
     private suspend fun heartbeatLoop() {
         while (duty) {
             val token = prefs.deviceToken ?: return
             try {
-                if (sessionId == null) sessionId = backend.startSession(token)
                 val cfg = backend.heartbeat(token, status(modeName(_state.value.phase)))
-                if (cfg.liveRequested != config.value.liveRequested) DebugLog.add("Server", if (cfg.liveRequested) "Owner asked for live video" else "Owner stopped live video")
+                val old = config.value
+                if (cfg.liveRequested != old.liveRequested) DebugLog.add("Server", if (cfg.liveRequested) "Owner opened the live feed" else "Owner closed the live feed")
+                if (cfg.duty != old.duty || cfg.sessionId != old.sessionId) {
+                    DebugLog.add("Server", if (cfg.duty) "Owner started recording (${cfg.captureMode})" else "Owner stopped recording")
+                }
                 config.value = cfg
-                _state.update { it.copy(online = true, snapshotEverySec = cfg.snapshotIntervalSec, workerName = prefs.pairedWorkerName) }
+                _state.update {
+                    it.copy(online = true, snapshotEverySec = cfg.snapshotIntervalSec, workerName = prefs.pairedWorkerName,
+                        recording = cfg.duty, captureMode = cfg.captureMode)
+                }
             } catch (e: UnpairedException) {
                 unpair(e.message ?: "Unpaired"); return
             } catch (e: Exception) {
                 _state.update { it.copy(online = false, uploadError = "Server: ${e.message}") }
             }
-            delay(if (config.value.liveRequested || _state.value.phase == LivePhase.LIVE) 4_000 else 12_000)
+            val busy = config.value.liveRequested || config.value.duty || _state.value.phase == LivePhase.LIVE
+            delay(if (busy) 4_000 else 7_000)
         }
     }
 
@@ -245,8 +257,11 @@ object LiveController {
                 delay(10_000); continue
             }
             try {
-                if (cfg.liveRequested) { runLive(); backoff = 5_000L }
-                else { snapshotOnce(); backoff = 5_000L; waitForNextSnapshot() }
+                when {
+                    cfg.liveRequested || (cfg.duty && cfg.captureMode == "video") -> { runLive(); backoff = 5_000L }
+                    cfg.duty -> { snapshotOnce(); backoff = 5_000L; waitForNextSnapshot() }
+                    else -> standby()
+                }
             } catch (e: Exception) {
                 if (!duty) break
                 if (e is kotlinx.coroutines.CancellationException) throw e
@@ -259,10 +274,23 @@ object LiveController {
         }
     }
 
-    /** Sleeps until the next snapshot is due, but wakes early if the owner asks for live video. */
+    /** Sleeps until the next snapshot is due, but wakes early if the owner changes anything. */
     private suspend fun waitForNextSnapshot() {
-        val due = lastSnapshotAt + config.value.snapshotIntervalSec * 1000L
-        while (duty && !config.value.liveRequested && System.currentTimeMillis() < due) delay(500)
+        val start = config.value
+        val due = lastSnapshotAt + start.snapshotIntervalSec * 1000L
+        while (duty && config.value.duty && !config.value.liveRequested && config.value.captureMode == start.captureMode &&
+            System.currentTimeMillis() < due) delay(500)
+    }
+
+    /** Camera off; keep Bluetooth up (for battery) and wait for the owner to start something. */
+    private suspend fun standby() {
+        closeCamera(sendStop = true)
+        if (_state.value.phase != LivePhase.STANDBY) {
+            _frame.value = null
+            _state.update { it.copy(phase = LivePhase.STANDBY, detail = "Ready. Camera is off until the owner starts recording.", fps = 0.0) }
+        }
+        connectSaved()
+        while (duty && !config.value.duty && !config.value.liveRequested && config.value.withinHours && config.value.active) delay(500)
     }
 
     private suspend fun ensureBluetooth() {
@@ -277,8 +305,9 @@ object LiveController {
     private suspend fun snapshotOnce() {
         ensureBluetooth()
         if (_state.value.phase != LivePhase.SNAPSHOT) _state.update { it.copy(phase = LivePhase.SNAPSHOT) }
+        if (config.value.sessionId == null) { delay(1_000); return }
         _state.update { it.copy(detail = "Taking photo") }
-        val jpeg = glasses.takePhoto(3)
+        val jpeg = Jpeg.shrink(glasses.takePhoto(3))
         val now = System.currentTimeMillis()
         lastSnapshotAt = now
         _frame.value = jpeg
@@ -292,8 +321,11 @@ object LiveController {
     private suspend fun runLive() {
         val mac = prefs.deviceAddress ?: throw IllegalStateException("No glasses selected")
         ensureBluetooth()
-        _state.update { it.copy(phase = LivePhase.STARTING, detail = "Owner requested live video; starting camera") }
-        val liveWanted = { duty && config.value.liveRequested && config.value.withinHours && config.value.active }
+        _state.update { it.copy(phase = LivePhase.STARTING, detail = "Owner requested video; starting camera") }
+        val liveWanted = {
+            val c = config.value
+            duty && (c.liveRequested || (c.duty && c.captureMode == "video")) && c.withinHours && c.active
+        }
         val w = GlassesWifi.open(app, scope, glasses, mac, prefs.deviceName, WifiDirectLink.Mode.LIVE,
             GlassesManager.CMD_LIVE_START, port = 8554) { msg -> _state.update { it.copy(detail = msg) } }
         if (!liveWanted()) { w.close(); return }
@@ -313,7 +345,7 @@ object LiveController {
             }
         } finally {
             closeCamera(sendStop = true)
-            if (duty) _state.update { it.copy(phase = LivePhase.SNAPSHOT, detail = "Back to photos", fps = 0.0) }
+            if (duty) _state.update { it.copy(phase = LivePhase.STARTING, detail = "Video stopped", fps = 0.0) }
         }
     }
 
@@ -328,14 +360,19 @@ object LiveController {
         _frame.value = jpeg
         runCatching { mjpeg?.publish(jpeg, "frame-$now.jpg") }
         val battery = _state.value.battery
-        if (now - lastSnapshotAt >= config.value.snapshotIntervalSec * 1000L) {
+        val c = config.value
+        val keepEveryMs = if (c.captureMode == "video") c.videoSaveEverySec * 1000L else c.snapshotIntervalSec * 1000L
+        if (c.duty && c.sessionId != null && now - lastSnapshotAt >= keepEveryMs) {
             lastSnapshotAt = now
             uploader?.snapshot(Frame(jpeg, now, battery, fromLive = true))
         } else if (now - lastLiveSentAt >= 1000L / config.value.liveFps.coerceIn(1, 5) - 50) {
             lastLiveSentAt = now
             uploader?.live(Frame(jpeg, now, battery, fromLive = true))
         }
-        _state.update { it.copy(phase = LivePhase.LIVE, detail = "Live video to owner", frames = it.frames + 1, fps = fps, frameBytes = jpeg.size) }
+        _state.update {
+            it.copy(phase = LivePhase.LIVE, detail = if (c.duty) "Recording video for the owner" else "Owner is watching the live feed",
+                frames = it.frames + 1, fps = fps, frameBytes = jpeg.size)
+        }
     }
 
     private fun closeCamera(sendStop: Boolean) {

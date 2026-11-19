@@ -1,6 +1,8 @@
 "use client";
 import { use, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import Shell from "@/components/Shell";
+import SessionControls from "@/components/SessionControls";
 import { api, ago, liveStatus, stableUrl, timeIST, dateTimeIST } from "@/lib/client";
 
 type Device = {
@@ -8,9 +10,10 @@ type Device = {
   status_detail: string | null; last_seen: string | null; last_frame_at: string | null; frame_url: string | null;
   paired_at: string | null; pair_code: string | null; pair_expires_at: string | null; consent_at: string | null; consent_name: string | null;
   glasses_name: string | null; app_version: string | null;
+  duty_requested: boolean; capture_mode: string; active_session_id: string | null;
 };
 type Snapshot = { id: string; url: string; source: string; battery: number | null; taken_at: string };
-type Session = { id: string; started_at: string; ended_at: string | null; snapshots: number };
+type Session = { id: string; mode: string; status: string; started_at: string; ended_at: string | null; snapshots: number; summary: string | null };
 type Event = { id: string; type: string; message: string | null; created_at: string };
 type Detail = { worker: { id: string; name: string; active: boolean }; device: Device | null; sessions: Session[]; snapshots: Snapshot[]; events: Event[] };
 
@@ -65,17 +68,12 @@ export default function WorkerPage({ params }: { params: Promise<{ id: string }>
           {dev?.last_frame_at && <span className="age">{timeIST(dev.last_frame_at)} · {ago(dev.last_frame_at, now)}</span>}
         </div>
         <div className="card-body">
-          <div className="row">
-            {dev?.paired_at && (
-              <button className={`btn ${dev.live_requested ? "brown" : ""}`} onClick={() => patch({ live: !dev.live_requested })}>
-                {dev.live_requested ? "Stop live video" : "Watch live video"}
-              </button>
-            )}
-            <span className="muted small">
-              {dev?.live_requested && dev.mode !== "live" ? "Waiting for the phone to switch to live… " : ""}
-              Live video drains the glasses battery fast; snapshots are much lighter.
-            </span>
-          </div>
+          <SessionControls workerId={id} paired={!!dev?.paired_at} online={!!dev?.last_seen && now - new Date(dev.last_seen).getTime() < 60_000}
+            sessionId={dev?.active_session_id ?? null} mode={dev?.capture_mode ?? null} liveRequested={!!dev?.live_requested} onChange={load} />
+          <p className="muted small" style={{ marginTop: 8 }}>
+            {dev?.live_requested && dev.mode !== "live" ? "Waiting for the phone to switch to live… " : ""}
+            Video and live feed drain the glasses battery fast; photos are much lighter.
+          </p>
           <p className="muted small" style={{ marginTop: 10 }}>
             Glasses battery: <b>{dev?.battery != null ? `${dev.battery}%${dev.charging ? " ⚡ charging" : ""}` : "—"}</b> ·
             Phone battery: <b>{dev?.phone_battery != null ? `${dev.phone_battery}%` : "—"}</b> ·
@@ -101,13 +99,20 @@ export default function WorkerPage({ params }: { params: Promise<{ id: string }>
         </div>
       )}
 
-      <h2>Duty sessions</h2>
-      {d.sessions.length === 0 ? <p className="muted">No sessions yet.</p> : (
+      <h2>Sessions</h2>
+      {d.sessions.length === 0 ? <p className="muted">No sessions yet. Tap “Start photos” or “Start video” above.</p> : (
         <ul className="list">
           {d.sessions.map((s) => (
             <li key={s.id}>
-              <b>{dateTimeIST(s.started_at)}</b> → {s.ended_at ? dateTimeIST(s.ended_at) : <span className="badge snap">on duty</span>}
-              <span className="muted small"> · {s.snapshots} photos</span>
+              <Link href={`/session/${s.id}`} style={{ textDecoration: "none" }}>
+                <div className="row spread">
+                  <b>{dateTimeIST(s.started_at)} → {s.ended_at ? timeIST(s.ended_at) : "now"}</b>
+                  <span className={`badge ${s.status === "recording" ? "live" : s.status === "done" ? "snap" : "warn"}`}>
+                    <span className="dot" />{s.status === "recording" ? "Recording" : s.status === "analysing" ? "Analysing…" : s.status === "done" ? "Summary ready" : s.status}
+                  </span>
+                </div>
+                <div className="muted small">{s.mode === "video" ? "Video" : "Photos"} · {s.snapshots} frames{s.summary ? ` · ${s.summary.slice(0, 140)}…` : ""}</div>
+              </Link>
             </li>
           ))}
         </ul>

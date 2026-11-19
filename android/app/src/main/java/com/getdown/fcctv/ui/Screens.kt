@@ -121,7 +121,8 @@ fun ConsentScreen(initialName: String, onAccept: (String) -> Unit, onDecline: ()
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("Camera notice for workers", fontWeight = FontWeight.Bold, fontSize = 22.sp)
             Text("This app connects to the smart glasses you wear and sends photos from their camera (every few seconds) and, when the owner asks, live video to the shop owner's dashboard and phone.")
-            Text("• Video is streamed only while the camera is on, during working hours set by the owner.\n" +
+            Text("• While FCCTV is \"Ready\", the owner can start and stop recording from the dashboard. You will always see when it is recording.\n" +
+                "• The owner can limit recording to working hours.\n" +
                 "• You will always see a \"LIVE\" sign in this app and a notification while it streams.\n" +
                 "• Snapshots and clips may be saved and reviewed by the owner, including by AI tools that summarise activity.\n" +
                 "• You can ask the owner how long recordings are kept and who can see them.")
@@ -167,7 +168,7 @@ fun HomeScreen(
             ) {
                 val bmp = remember(frame) { frame?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() } }
                 if (bmp != null) Image(bmp, "Live view from glasses", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-                else Text(if (running) s.detail.ifBlank { "Starting…" } else "Camera is off. Tap Start duty.", color = Brand.White, modifier = Modifier.padding(16.dp))
+                else Text(if (running) s.detail.ifBlank { "Starting…" } else "FCCTV is off. Tap Be ready.", color = Brand.White, modifier = Modifier.padding(16.dp))
             }
             if (s.frames > 0 || running) Text(
                 buildString {
@@ -222,11 +223,11 @@ fun HomeScreen(
 
         Box(Modifier.padding(16.dp).navigationBarsPadding()) {
             if (!running) Button(onClick = onStart, enabled = s.deviceName != null && s.paired, modifier = Modifier.fillMaxWidth().height(56.dp)) {
-                Icon(Icons.Filled.Videocam, null); Spacer(Modifier.width(8.dp)); Text("Start duty", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Icon(Icons.Filled.Videocam, null); Spacer(Modifier.width(8.dp)); Text("Be ready", fontWeight = FontWeight.Bold, fontSize = 17.sp)
             } else Button(
                 onClick = onStop, modifier = Modifier.fillMaxWidth().height(56.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Brand.MuddyBrown, contentColor = Brand.White),
-            ) { Text("Stop duty", fontWeight = FontWeight.Bold, fontSize = 17.sp) }
+            ) { Text("Turn FCCTV off", fontWeight = FontWeight.Bold, fontSize = 17.sp) }
         }
     }
 }
@@ -268,7 +269,8 @@ private fun LiveBadge(phase: LivePhase) {
     val a by pulse.animateFloat(1f, 0.25f, infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "a")
     val (bg, fg, label) = when (phase) {
         LivePhase.LIVE -> Triple(Brand.LeafyGreen, Brand.Black, "LIVE · Video to owner")
-        LivePhase.SNAPSHOT -> Triple(Brand.LeafyGreenDark, Brand.White, "ON DUTY · Photos to owner")
+        LivePhase.SNAPSHOT -> Triple(Brand.LeafyGreen, Brand.Black, "RECORDING · Photos to owner")
+        LivePhase.STANDBY -> Triple(Brand.LeafyGreenDark, Brand.White, "READY · Camera off")
         LivePhase.STARTING -> Triple(Brand.MuddyBrown, Brand.White, "Starting camera…")
         LivePhase.RETRYING -> Triple(Brand.MuddyBrownDark, Brand.White, "Reconnecting…")
         LivePhase.PAUSED -> Triple(Brand.MuddyBrownDark, Brand.White, "Paused")

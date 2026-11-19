@@ -36,6 +36,7 @@ export type WorkerRow = {
   battery: number | null; charging: boolean | null; phone_battery: number | null; status_detail: string | null;
   last_seen: string | null; last_frame_at: string | null; frame_url: string | null; paired_at: string | null;
   pair_code: string | null; glasses_name: string | null;
+  duty_requested: boolean | null; capture_mode: string | null; active_session_id: string | null;
 };
 
 /** What to show on a worker's badge. */
@@ -44,8 +45,9 @@ export function liveStatus(w: { mode: string | null; last_seen: string | null; p
   const fresh = w.last_seen && now - new Date(w.last_seen).getTime() < 60_000;
   if (!fresh) return { cls: "off", label: "Offline" };
   if (w.mode === "live") return { cls: "live", label: "LIVE" };
-  if (w.mode === "snapshot") return { cls: "snap", label: "On duty · snapshots" };
+  if (w.mode === "snapshot") return { cls: "live", label: "Recording photos" };
   if (w.mode === "paused") return { cls: "warn", label: "Outside hours" };
+  if (w.mode === "standby") return { cls: "snap", label: "Ready" };
   return { cls: "off", label: "Off duty" };
 }
 

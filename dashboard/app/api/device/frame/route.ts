@@ -1,8 +1,11 @@
-import { sql } from "@/lib/db";
+import { after } from "next/server";
+import { sql, getSettings } from "@/lib/db";
+import { analyseFor } from "@/lib/analysis";
 import { json, device } from "@/lib/http";
 import { putJpeg, r2Configured } from "@/lib/r2";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 const MAX = 3 * 1024 * 1024;
 const UUID = /^[0-9a-f-]{36}$/i;
 
@@ -35,7 +38,15 @@ export const POST = device(async (req, dev) => {
               ${bat}, ${jpeg.length}, ${takenAt.toISOString()})
       returning id`) as { id: string }[];
     snapshotId = rows[0].id;
-    if (sessionId) await sql`update sessions set snapshots = snapshots + 1 where id = ${sessionId} and device_id = ${dev.id}`;
+    if (sessionId) {
+      const r = (await sql`update sessions set snapshots = snapshots + 1 where id = ${sessionId} and device_id = ${dev.id}
+        returning snapshots`) as { snapshots: number }[];
+      const s = await getSettings();
+      // Every N photos: write the next timeline note in the background.
+      if (r[0] && s.auto_analyse && s.gemini_api_key && r[0].snapshots % Math.max(3, s.summary_batch) === 0) {
+        after(() => analyseFor(sessionId, 45_000).then(() => undefined));
+      }
+    }
   }
   await sql`
     update devices set last_frame_at = ${takenAt.toISOString()}, latest_frame_key = ${key}, last_seen = now(),

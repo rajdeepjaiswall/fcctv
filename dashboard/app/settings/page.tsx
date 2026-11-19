@@ -6,6 +6,8 @@ import { api } from "@/lib/client";
 type S = {
   snapshot_interval_sec: number; live_fps: number; retention_days: number; enforce_hours: boolean; work_start: string; work_end: string; timezone: string;
   r2_account_id: string | null; r2_bucket: string | null; r2_access_key_hint: string | null; r2_has_secret: boolean;
+  gemini_key_hint: string | null; ai_model: string; ai_language: string; summary_batch: number; auto_analyse: boolean;
+  default_capture_mode: string; video_save_every_sec: number;
 };
 
 export default function Settings() {
@@ -15,6 +17,11 @@ export default function Settings() {
   const [error, setError] = useState("");
   const [keyId, setKeyId] = useState("");
   const [secretKey, setSecretKey] = useState("");
+  const [geminiKey, setGeminiKey] = useState("");
+  const [models, setModels] = useState<string[]>([]);
+  const [aiMsg, setAiMsg] = useState("");
+  const [aiErr, setAiErr] = useState("");
+  const [testing, setTesting] = useState(false);
 
   useEffect(() => { api<{ settings: S; r2: boolean }>("/api/settings").then((r) => { setS(r.settings); setR2(r.r2); }).catch((e) => setError(e.message)); }, []);
   if (!s) return <Shell>{error ? <div className="alert">{error}</div> : <p className="muted">Loading…</p>}</Shell>;
@@ -24,9 +31,9 @@ export default function Settings() {
     e.preventDefault(); setMsg(""); setError("");
     try {
       const r = await api<{ settings: S; r2: boolean; r2Error: string | null; r2Tested: boolean }>("/api/settings", {
-        method: "PUT", body: JSON.stringify({ ...s, r2_access_key: keyId, r2_secret_key: secretKey, testR2 }),
+        method: "PUT", body: JSON.stringify({ ...s, r2_access_key: keyId, r2_secret_key: secretKey, gemini_api_key: geminiKey, testR2 }),
       });
-      setS(r.settings); setR2(r.r2); setKeyId(""); setSecretKey("");
+      setS(r.settings); setR2(r.r2); setKeyId(""); setSecretKey(""); setGeminiKey("");
       if (r.r2Tested && r.r2Error) setError(`Saved, but the photo storage test failed: ${r.r2Error}`);
       else setMsg(r.r2Tested ? "Saved. Photo storage works ✓" : "Saved. Phones pick this up within a few seconds.");
     } catch (err) { setError((err as Error).message); }
@@ -68,11 +75,55 @@ export default function Settings() {
         <div className="field"><label htmlFor="rs">Secret Access Key {s.r2_has_secret && <span className="muted small">(saved; leave empty to keep)</span>}</label>
           <input id="rs" className="input" type="password" value={secretKey} onChange={(e) => setSecretKey(e.target.value)} autoComplete="new-password" /></div>
         <button type="button" className="btn ghost" style={{ marginBottom: 14 }} onClick={(e) => save(e, true)}>Save &amp; test photo storage</button>
+        <h2>Capture</h2>
+        <div className="field"><label htmlFor="cm">Default for “Start”</label>
+          <select id="cm" className="input" value={s.default_capture_mode} onChange={(e) => set("default_capture_mode", e.target.value)}>
+            <option value="images">Photos (light on battery)</option>
+            <option value="video">Video (live video; heavy on battery)</option>
+          </select></div>
+        <div className="field"><label htmlFor="vs">In video mode, keep a frame for the timeline every</label>
+          <select id="vs" className="input" value={s.video_save_every_sec} onChange={(e) => set("video_save_every_sec", Number(e.target.value))}>
+            {[1, 2, 3, 5, 10, 15, 30].map((n) => <option key={n} value={n}>{n} second{n > 1 ? "s" : ""}</option>)}
+          </select></div>
+
+        <h2>AI analysis (Google Gemini)</h2>
+        <p className="muted small">The key stays on the server and is never sent to workers&apos; phones. Get one at aistudio.google.com → Get API key.</p>
+        <div className="field"><label htmlFor="gk">Gemini API key {s.gemini_key_hint && <span className="muted small">(saved {s.gemini_key_hint}; leave empty to keep)</span>}</label>
+          <input id="gk" className="input" type="password" value={geminiKey} onChange={(e) => setGeminiKey(e.target.value)} autoComplete="off" /></div>
+        <div className="field"><label htmlFor="am">Model</label>
+          <input id="am" className="input" list="models" value={s.ai_model} onChange={(e) => set("ai_model", e.target.value)} />
+          <datalist id="models">{models.map((m) => <option key={m} value={m} />)}</datalist>
+          {models.length > 0 && <span className="muted small">Your key can use: {models.slice(0, 8).join(", ")}{models.length > 8 ? "…" : ""}</span>}
+        </div>
+        <button type="button" className="btn ghost" style={{ marginBottom: 14 }} disabled={testing} onClick={async (e) => {
+          setTesting(true); setAiMsg(""); setAiErr("");
+          try {
+            await save(e);
+            const r = await api<{ ok: boolean; models: string[]; reply?: string; error?: string }>("/api/settings/ai-test", { method: "POST", body: "{}" });
+            setModels(r.models ?? []);
+            if (r.ok) setAiMsg(`Key works ✓ (${s.ai_model} replied “${r.reply}”)`); else setAiErr(r.error ?? "Test failed");
+          } catch (err) { setAiErr((err as Error).message); }
+          setTesting(false);
+        }}>{testing ? "Testing…" : "Save & test key"}</button>
+        {aiMsg && <div className="ok">{aiMsg}</div>}
+        {aiErr && <div className="alert">{aiErr}{models.length > 0 ? " — pick a model from the list above and test again." : ""}</div>}
+        <div className="field">
+          <label><input type="checkbox" checked={s.auto_analyse} onChange={(e) => set("auto_analyse", e.target.checked)} /> Analyse automatically (timeline notes while recording, summary when stopped)</label>
+        </div>
+        <div className="field"><label htmlFor="sb">Write a timeline note every</label>
+          <select id="sb" className="input" value={s.summary_batch} onChange={(e) => set("summary_batch", Number(e.target.value))}>
+            {[5, 10, 15, 20, 30, 60].map((n) => <option key={n} value={n}>{n} photos</option>)}
+          </select></div>
+        <div className="field"><label htmlFor="al">AI language</label>
+          <select id="al" className="input" value={s.ai_language} onChange={(e) => set("ai_language", e.target.value)}>
+            <option value="en">English</option><option value="hi">हिन्दी (Hindi)</option>
+          </select></div>
+
         {msg && <div className="ok">{msg}</div>}
         {error && <div className="alert">{error}</div>}
         <button className="btn">Save settings</button>
       </form>
-      <p className="muted small" style={{ marginTop: 16 }}>AI analysis (Gemini key, phone-use alerts, custom rules, summaries) arrives in Phase 3.5.</p>
+      
     </Shell>
   );
 }

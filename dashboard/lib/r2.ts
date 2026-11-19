@@ -47,6 +47,14 @@ export async function putJpeg(key: string, body: Uint8Array) {
   if (!res.ok) throw new Error(`Photo storage error ${res.status}: ${(await res.text()).slice(0, 200)}`);
 }
 
+export async function getObject(key: string): Promise<Uint8Array | null> {
+  const c = await r2();
+  if (!c) return null;
+  const res = await c.client.fetch(objectUrl(c.base, key));
+  if (!res.ok) return null;
+  return new Uint8Array(await res.arrayBuffer());
+}
+
 export async function deleteObject(key: string) {
   const c = await r2();
   if (c) await c.client.fetch(objectUrl(c.base, key), { method: "DELETE" }).catch(() => undefined);

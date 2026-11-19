@@ -74,6 +74,37 @@ const SCHEMA = [
      false_alarm boolean not null default false,
      created_at timestamptz not null default now())`,
   `create index if not exists events_time on events (created_at desc)`,
+  // ---- Phase 3.5: remote sessions + AI
+  `alter table devices add column if not exists duty_requested boolean not null default false`,
+  `alter table devices add column if not exists capture_mode text not null default 'images'`,
+  `alter table devices add column if not exists active_session_id uuid`,
+  `alter table sessions add column if not exists mode text not null default 'images'`,
+  `alter table sessions add column if not exists status text not null default 'recording'`,
+  `alter table sessions add column if not exists summary text`,
+  `alter table sessions add column if not exists analysed_count int not null default 0`,
+  `alter table sessions add column if not exists ai_error text`,
+  `alter table sessions add column if not exists started_by text`,
+  `alter table sessions add column if not exists title text`,
+  `create table if not exists session_notes (
+     id uuid primary key default gen_random_uuid(),
+     session_id uuid not null references sessions on delete cascade,
+     idx int not null, from_at timestamptz, to_at timestamptz, text text not null,
+     snapshot_ids uuid[] not null default '{}', created_at timestamptz not null default now(),
+     unique (session_id, idx))`,
+  `create table if not exists session_messages (
+     id uuid primary key default gen_random_uuid(),
+     session_id uuid not null references sessions on delete cascade,
+     role text not null, content text not null, created_at timestamptz not null default now())`,
+  `create index if not exists session_messages_s on session_messages (session_id, created_at)`,
+  `create index if not exists snapshots_session on snapshots (session_id, taken_at)`,
+  `alter table sessions add column if not exists ai_lock_until timestamptz`,
+  `alter table settings add column if not exists gemini_api_key text`,
+  `alter table settings add column if not exists ai_model text not null default 'gemini-3.6-flash'`,
+  `alter table settings add column if not exists ai_language text not null default 'en'`,
+  `alter table settings add column if not exists summary_batch int not null default 10`,
+  `alter table settings add column if not exists auto_analyse boolean not null default true`,
+  `alter table settings add column if not exists default_capture_mode text not null default 'images'`,
+  `alter table settings add column if not exists video_save_every_sec int not null default 3`,
 ];
 
 let ready: Promise<void> | null = null;
@@ -92,6 +123,8 @@ export type Settings = {
   snapshot_interval_sec: number; live_fps: number; retention_days: number;
   enforce_hours: boolean; work_start: string; work_end: string; timezone: string;
   r2_account_id: string | null; r2_access_key: string | null; r2_secret_key: string | null; r2_bucket: string | null;
+  gemini_api_key: string | null; ai_model: string; ai_language: "en" | "hi"; summary_batch: number; auto_analyse: boolean;
+  default_capture_mode: "images" | "video"; video_save_every_sec: number;
 };
 
 export async function getSettings(): Promise<Settings> {

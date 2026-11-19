@@ -14,10 +14,10 @@ export const GET = admin(async (req: Request, ctx: Ctx) => {
   const w = (await sql`select * from workers where id = ${id}`) as Record<string, unknown>[];
   if (!w[0]) return json({ error: "Worker not found" }, 404);
   const d = (await sql`select id, mode, live_requested, battery, charging, phone_battery, status_detail, last_seen, last_frame_at,
-      latest_frame_key, paired_at, pair_code, pair_expires_at, consent_at, consent_name, glasses_name, glasses_mac, app_version
+      latest_frame_key, paired_at, pair_code, pair_expires_at, consent_at, consent_name, glasses_name, glasses_mac, app_version, duty_requested, capture_mode, active_session_id
       from devices where worker_id = ${id}`) as Record<string, unknown>[];
   const dev = d[0] ?? null;
-  const sessions = await sql`select * from sessions where worker_id = ${id} order by started_at desc limit 20`;
+  const sessions = await sql`select id, mode, status, started_at, ended_at, snapshots, summary from sessions where worker_id = ${id} order by started_at desc limit 30`;
   // Snapshots for one day in IST (default today).
   const snaps = (day
     ? await sql`select id, key, source, battery, taken_at from snapshots where worker_id = ${id}
