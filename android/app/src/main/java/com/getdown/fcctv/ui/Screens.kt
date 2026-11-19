@@ -122,7 +122,6 @@ fun ConsentScreen(initialName: String, onAccept: (String) -> Unit, onDecline: ()
             Text("Camera notice for workers", fontWeight = FontWeight.Bold, fontSize = 22.sp)
             Text("This app connects to the smart glasses you wear and sends photos from their camera (every few seconds) and, when the owner asks, live video to the shop owner's dashboard and phone.")
             Text("• While FCCTV is \"Ready\", the owner can start and stop recording from the dashboard. You will always see when it is recording.\n" +
-                "• The owner can limit recording to working hours.\n" +
                 "• You will always see a \"LIVE\" sign in this app and a notification while it streams.\n" +
                 "• Snapshots and clips may be saved and reviewed by the owner, including by AI tools that summarise activity.\n" +
                 "• You can ask the owner how long recordings are kept and who can see them.")
@@ -211,7 +210,7 @@ fun HomeScreen(
                 }
             }
 
-            if (s.detail.isNotBlank()) Text(s.detail, fontSize = 14.sp)
+            if (s.detail.isNotBlank()) Text(s.detail, fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground)
 
             if (batteryOptimized) {
                 InfoCard("Keep streaming with the screen off", "Allow FCCTV to run in the background so OnePlus battery saver doesn't stop it.", "Allow", onBatteryExemption)

@@ -43,6 +43,8 @@ class MainActivity : ComponentActivity() {
         permissionsOk = missingPermissions().isEmpty()
         setContent {
             FcctvTheme {
+              // Surface gives every screen the theme's text colour (readable in dark mode too).
+              androidx.compose.material3.Surface(color = androidx.compose.material3.MaterialTheme.colorScheme.background) {
                 LaunchedEffect(Unit) {
                     delay(1200)
                     screen = if (LiveController.prefs.consentAt == 0L) Screen.CONSENT else Screen.HOME
@@ -78,6 +80,7 @@ class MainActivity : ComponentActivity() {
                 androidx.activity.compose.BackHandler(enabled = screen == Screen.DEVICES || screen == Screen.LOG) {
                     screen = Screen.HOME
                 }
+              }
             }
         }
     }

@@ -58,14 +58,7 @@ export default function Settings() {
           <select id="r" className="input" value={s.retention_days} onChange={(e) => set("retention_days", Number(e.target.value))}>
             {[1, 3, 7, 15, 30, 60, 90, 180, 365].map((n) => <option key={n} value={n}>{n} day{n > 1 ? "s" : ""}</option>)}
           </select></div>
-        <div className="field">
-          <label><input type="checkbox" checked={s.enforce_hours} onChange={(e) => set("enforce_hours", e.target.checked)} /> Only capture during working hours (India time)</label>
-          <div className="row">
-            <input className="input" type="time" value={s.work_start} onChange={(e) => set("work_start", e.target.value)} disabled={!s.enforce_hours} />
-            <span>to</span>
-            <input className="input" type="time" value={s.work_end} onChange={(e) => set("work_end", e.target.value)} disabled={!s.enforce_hours} />
-          </div>
-        </div>
+
         <h2>Photo storage (Cloudflare R2)</h2>
         <p className="muted small">{r2 ? `Connected · bucket ${s.r2_bucket ?? "fcctv-frames"} · key ${s.r2_access_key_hint ?? "(from server)"}` : "Not connected yet. Paste your R2 details, then tap Save & test."}</p>
         <div className="field"><label htmlFor="ra">Account ID</label>

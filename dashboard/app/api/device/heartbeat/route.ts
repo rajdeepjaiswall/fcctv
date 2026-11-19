@@ -1,5 +1,5 @@
 import { after } from "next/server";
-import { sql, getSettings, withinHours } from "@/lib/db";
+import { sql, getSettings } from "@/lib/db";
 import { backgroundTick } from "@/lib/analysis";
 import { json, device } from "@/lib/http";
 
@@ -10,7 +10,8 @@ export const maxDuration = 60;
 export const POST = device(async (req, dev) => {
   const b = await req.json().catch(() => ({}));
   const s = await getSettings();
-  const inHours = withinHours(s);
+  // The owner starts and stops recording by hand, so there is no working-hours block any more.
+  const inHours = true;
   const mode = ["off", "standby", "snapshot", "live", "paused"].includes(b.mode) ? b.mode : "off";
   const rows = (await sql`
     update devices set last_seen = now(), mode = ${mode},

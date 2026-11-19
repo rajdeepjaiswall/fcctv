@@ -260,9 +260,9 @@ object LiveController {
         var backoff = 5_000L
         while (duty) {
             val cfg = config.value
-            if (!cfg.withinHours || !cfg.active) {
+            if (!cfg.active) {
                 closeCamera(sendStop = true)
-                _state.update { it.copy(phase = LivePhase.PAUSED, detail = if (!cfg.active) "Paused by owner" else "Outside working hours (${cfg.workStart}–${cfg.workEnd})") }
+                _state.update { it.copy(phase = LivePhase.PAUSED, detail = "Paused by owner") }
                 delay(10_000); continue
             }
             try {
@@ -299,7 +299,7 @@ object LiveController {
             _state.update { it.copy(phase = LivePhase.STANDBY, detail = "Ready. Camera is off until the owner starts recording.", fps = 0.0) }
         }
         connectSaved()
-        while (duty && !config.value.duty && !config.value.liveRequested && config.value.withinHours && config.value.active) delay(500)
+        while (duty && !config.value.duty && !config.value.liveRequested && config.value.active) delay(500)
     }
 
     private suspend fun ensureBluetooth() {
@@ -336,7 +336,7 @@ object LiveController {
         }
         val liveWanted = {
             val c = config.value
-            duty && (c.liveRequested || (c.duty && c.captureMode == "video")) && c.withinHours && c.active
+            duty && (c.liveRequested || (c.duty && c.captureMode == "video")) && c.active
         }
         val w = GlassesWifi.open(app, scope, glasses, mac, prefs.deviceName, WifiDirectLink.Mode.LIVE,
             GlassesManager.CMD_LIVE_START, port = 8554) { msg -> _state.update { it.copy(detail = msg) } }
