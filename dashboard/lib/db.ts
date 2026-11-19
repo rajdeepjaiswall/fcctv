@@ -137,6 +137,11 @@ const SCHEMA = [
      id uuid primary key default gen_random_uuid(), endpoint text unique not null,
      p256dh text not null, auth text not null, label text, created_at timestamptz not null default now())`,
   `alter table devices add column if not exists last_check_at timestamptz`,
+  `alter table devices add column if not exists battery_at timestamptz`,
+  `alter table devices add column if not exists phone_battery_at timestamptz`,
+  `alter table devices add column if not exists glasses_connected boolean`,
+  `alter table sessions add column if not exists summary_at timestamptz`,
+  `alter table sessions add column if not exists summary_frames int`,
   `alter table session_messages add column if not exists pending boolean not null default false`,
   `insert into alert_rules (text, name, look_for, alert_message, understood, alert_enabled, min_confidence, cooldown_sec)
      select 'Using a mobile phone', 'Phone use',

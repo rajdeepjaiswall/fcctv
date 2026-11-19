@@ -14,16 +14,18 @@ export const GET = admin(async (req: Request, ctx: Ctx) => {
   const w = (await sql`select * from workers where id = ${id}`) as Record<string, unknown>[];
   if (!w[0]) return json({ error: "Worker not found" }, 404);
   const d = (await sql`select id, mode, live_requested, battery, charging, phone_battery, status_detail, last_seen, last_frame_at,
-      latest_frame_key, paired_at, pair_code, pair_expires_at, consent_at, consent_name, glasses_name, glasses_mac, app_version, duty_requested, capture_mode, active_session_id
+      latest_frame_key, paired_at, pair_code, pair_expires_at, consent_at, consent_name, glasses_name, glasses_mac, app_version, duty_requested, capture_mode, active_session_id, battery_at, phone_battery_at, glasses_connected
       from devices where worker_id = ${id}`) as Record<string, unknown>[];
   const dev = d[0] ?? null;
-  const sessions = await sql`select id, mode, status, started_at, ended_at, snapshots, summary from sessions where worker_id = ${id} order by started_at desc limit 30`;
+  const sessionRows = (await sql`select s.id, s.mode, s.status, s.started_at, s.ended_at, s.summary, s.summary_at, s.analysed_count, s.ai_error,
+      (select count(*)::int from snapshots p where p.session_id = s.id) as snapshots,
+      (select key from snapshots p where p.session_id = s.id order by taken_at desc limit 1) as cover_key,
+      (select count(*)::int from alerts a where a.session_id = s.id and not a.false_alarm) as alerts
+    from sessions s where s.worker_id = ${id} order by s.started_at desc limit 40`) as (Record<string, unknown> & { cover_key: string | null })[];
+  const sessions = await Promise.all(sessionRows.map(async ({ cover_key, ...r }) => ({ ...r, cover: cover_key ? await signedUrl(cover_key, 3600) : null })));
   // Snapshots for one day in IST (default today).
-  const snaps = (day
-    ? await sql`select id, key, source, battery, taken_at from snapshots where worker_id = ${id}
+  const snaps = (!day ? [] : await sql`select id, key, source, battery, taken_at from snapshots where worker_id = ${id}
         and (taken_at at time zone 'Asia/Kolkata')::date = ${day}::date order by taken_at desc limit 400`
-    : await sql`select id, key, source, battery, taken_at from snapshots where worker_id = ${id}
-        and (taken_at at time zone 'Asia/Kolkata')::date = (now() at time zone 'Asia/Kolkata')::date order by taken_at desc limit 400`
   ) as { id: string; key: string }[];
   const events = await sql`select * from events where worker_id = ${id} order by created_at desc limit 50`;
   return json({

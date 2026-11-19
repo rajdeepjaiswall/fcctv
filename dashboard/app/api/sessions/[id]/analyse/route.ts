@@ -18,5 +18,5 @@ export const POST = admin(async (req: Request, ctx: Ctx) => {
       status = case when ended_at is null then 'recording' else 'analysing' end where id = ${id}`;
   }
   await answerPending(id);
-  return json(await analyseStep(id));
+  return json(await analyseStep(id, !!b.full || !!b.restart));
 });

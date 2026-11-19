@@ -103,3 +103,24 @@ h2 { font-size: 18px; margin: 22px 0 10px; color: var(--muddy-brown); }
 .stat b { font-size: 26px; display: block; color: var(--muddy-brown); }
 @media (prefers-color-scheme: dark) { .stat b { color: var(--leafy-green); } }
 .btn.small { padding: 6px 10px; font-size: 13px; border-radius: 10px; }
+
+/* Staff list */
+.staff { display: flex; flex-direction: column; gap: 10px; }
+.staff-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 16px; text-decoration: none; color: var(--fg); }
+.staff-row:active { transform: scale(.99); }
+.staff-name { font-size: 20px; font-weight: 800; margin-bottom: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.staff-batt { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; flex: none; }
+.batt { display: flex; align-items: baseline; gap: 6px; padding: 4px 10px; border-radius: 10px; font-size: 14px; white-space: nowrap; }
+.batt b { font-size: 16px; }
+.batt-label { font-size: 12px; opacity: .8; }
+.batt.ok { background: var(--leafy-green); color: var(--black); }
+.batt.low { background: var(--muddy-brown); color: var(--white); }
+.batt.stale { background: transparent; color: var(--muted); border: 1px dashed var(--line); }
+.batt.stale b { font-size: 13px; font-weight: 600; }
+
+/* Session cards */
+.summary-box { white-space: pre-wrap; background: var(--bg); border: 1px solid var(--line); border-left: 4px solid var(--leafy-green);
+  border-radius: 12px; padding: 10px 12px; margin-top: 10px; font-size: 15px; line-height: 1.45; }
+.progress { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; margin-top: 8px; }
+.progress > div { height: 100%; background: var(--leafy-green); transition: width .4s; }

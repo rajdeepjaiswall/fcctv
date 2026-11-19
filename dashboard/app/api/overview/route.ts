@@ -8,7 +8,9 @@ export const dynamic = "force-dynamic";
 export const GET = admin(async () => {
   const rows = (await sql`
     select w.id, w.name, w.active, d.id as device_id, d.mode, d.live_requested, d.battery, d.charging, d.phone_battery,
-           d.status_detail, d.last_seen, d.last_frame_at, d.latest_frame_key, d.paired_at, d.pair_code, d.glasses_name, d.duty_requested, d.capture_mode, d.active_session_id
+           d.status_detail, d.last_seen, d.last_frame_at, d.latest_frame_key, d.paired_at, d.pair_code, d.glasses_name, d.duty_requested, d.capture_mode, d.active_session_id, d.battery_at, d.phone_battery_at, d.glasses_connected,
+           (select count(*)::int from sessions s where s.worker_id = w.id) as session_count,
+           (select count(*)::int from alerts a where a.worker_id = w.id and not a.false_alarm and (a.created_at at time zone 'Asia/Kolkata')::date = (now() at time zone 'Asia/Kolkata')::date) as alerts_today
     from workers w left join devices d on d.worker_id = w.id
     order by w.created_at`) as Record<string, unknown>[];
   const out = await Promise.all(rows.map(async (r) => ({

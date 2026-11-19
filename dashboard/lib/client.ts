@@ -37,7 +37,16 @@ export type WorkerRow = {
   last_seen: string | null; last_frame_at: string | null; frame_url: string | null; paired_at: string | null;
   pair_code: string | null; glasses_name: string | null;
   duty_requested: boolean | null; capture_mode: string | null; active_session_id: string | null;
+  battery_at: string | null; phone_battery_at: string | null; glasses_connected: boolean | null;
+  session_count: number; alerts_today: number;
 };
+
+/** Battery text that never pretends: fresh (<3 min) shows the number; older shows "last X% · 2h ago". */
+export function batteryText(pct: number | null, at: string | null, charging?: boolean | null, now = Date.now()) {
+  if (pct == null) return { text: "—", fresh: false };
+  const fresh = !!at && now - new Date(at).getTime() < 180_000;
+  return { text: fresh ? `${pct}%${charging ? " ⚡" : ""}` : `last ${pct}% · ${ago(at, now)}`, fresh };
+}
 
 /** What to show on a worker's badge. */
 export function liveStatus(w: { mode: string | null; last_seen: string | null; paired_at: string | null }, now = Date.now()) {

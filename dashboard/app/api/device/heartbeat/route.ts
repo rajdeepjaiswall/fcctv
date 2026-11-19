@@ -14,7 +14,11 @@ export const POST = device(async (req, dev) => {
   const mode = ["off", "standby", "snapshot", "live", "paused"].includes(b.mode) ? b.mode : "off";
   const rows = (await sql`
     update devices set last_seen = now(), mode = ${mode},
-      battery = ${b.battery ?? null}, charging = ${b.charging ?? null}, phone_battery = ${b.phone_battery ?? null},
+      battery = coalesce(${b.battery ?? null}::int, battery), charging = coalesce(${b.charging ?? null}::boolean, charging),
+      battery_at = case when ${b.battery ?? null}::int is not null then now() else battery_at end,
+      phone_battery = coalesce(${b.phone_battery ?? null}::int, phone_battery),
+      phone_battery_at = case when ${b.phone_battery ?? null}::int is not null then now() else phone_battery_at end,
+      glasses_connected = ${typeof b.glasses_connected === "boolean" ? b.glasses_connected : null},
       status_detail = ${typeof b.detail === "string" ? b.detail.slice(0, 200) : null},
       glasses_name = ${b.glasses_name ?? null}, glasses_mac = ${b.glasses_mac ?? null}, app_version = ${b.app_version ?? null}
     where id = ${dev.id} returning live_requested, duty_requested, capture_mode, active_session_id`) as {

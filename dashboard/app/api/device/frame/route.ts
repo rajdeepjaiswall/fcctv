@@ -53,7 +53,7 @@ export const POST = device(async (req, dev) => {
   }
   await sql`
     update devices set last_frame_at = ${takenAt.toISOString()}, latest_frame_key = ${key}, last_seen = now(),
-      battery = coalesce(${bat}, battery)
+      battery = coalesce(${bat}, battery), battery_at = case when ${bat}::int is not null then now() else battery_at end
     where id = ${dev.id}`;
   return json({ ok: true, snapshot_id: snapshotId });
 });

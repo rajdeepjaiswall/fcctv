@@ -14,7 +14,7 @@ import { getVisionModel, languageName, AiBusyError, type AiPart } from "./ai";
 type Snap = { id: string; key: string; taken_at: string };
 type Session = {
   id: string; worker_id: string; worker_name: string; mode: string; status: string; started_at: string; ended_at: string | null;
-  summary: string | null;
+  summary: string | null; analysed_count: number; summary_frames: number | null;
 };
 
 const MAX_IMAGES_PER_CALL = 16;
@@ -46,7 +46,7 @@ const SYSTEM = (workerName: string, lang: string) =>
   `items handled, phone use, idle time. Never guess identities. Be factual and brief. Write in ${languageName(lang)}.`;
 
 async function loadSession(id: string): Promise<Session | null> {
-  const rows = (await sql`select s.id, s.worker_id, w.name as worker_name, s.mode, s.status, s.started_at, s.ended_at, s.summary
+  const rows = (await sql`select s.id, s.worker_id, w.name as worker_name, s.mode, s.status, s.started_at, s.ended_at, s.summary, s.analysed_count, s.summary_frames
     from sessions s join workers w on w.id = s.worker_id where s.id = ${id}`) as Session[];
   return rows[0] ?? null;
 }
@@ -59,10 +59,13 @@ async function lock(id: string): Promise<boolean> {
 }
 const unlock = (id: string) => sql`update sessions set ai_lock_until = null where id = ${id}`;
 
-export type StepResult = { state: "working" | "waiting" | "done" | "failed" | "busy"; notes: number; total: number; error?: string };
+export type StepResult = { state: "working" | "waiting" | "done" | "failed" | "busy"; notes: number; total: number; analysed?: number; error?: string };
 
-/** Runs at most one AI call for this session. */
-export async function analyseStep(sessionId: string): Promise<StepResult> {
+/**
+ * Runs at most one AI call for this session.
+ * force = the owner tapped "AI analyse": go through every frame now (even mid-session) and write a summary.
+ */
+export async function analyseStep(sessionId: string, force = false): Promise<StepResult> {
   const session = await loadSession(sessionId);
   if (!session) return { state: "failed", notes: 0, total: 0, error: "Session not found" };
   const s = await getSettings();
@@ -70,18 +73,23 @@ export async function analyseStep(sessionId: string): Promise<StepResult> {
   const snaps = (await sql`select id, key, taken_at from snapshots where session_id = ${sessionId} order by taken_at`) as Snap[];
   const noteCount = ((await sql`select count(*)::int as n from session_notes where session_id = ${sessionId}`) as { n: number }[])[0].n;
   const ended = !!session.ended_at;
-  const base = { notes: noteCount, total: snaps.length };
+  const finishing = ended || force;
+  const base = { notes: noteCount, total: snaps.length, analysed: session.analysed_count };
 
-  if (session.status === "done") return { state: "done", ...base };
+  if (session.status === "done" && !force) return { state: "done", ...base };
   if (!s.gemini_api_key) {
     if (ended) await sql`update sessions set status = 'done', ai_error = 'No Gemini key set' where id = ${sessionId}`;
     return { state: ended ? "done" : "waiting", ...base, error: "No Gemini API key in Settings" };
   }
-  const from = noteCount * batch;
+  const from = Math.min(session.analysed_count, snaps.length);
   const chunk = snaps.slice(from, from + batch);
   const fullBatchReady = chunk.length === batch;
-  const needNote = fullBatchReady || (ended && chunk.length > 0);
-  if (!needNote && !ended) return { state: "waiting", ...base };
+  const needNote = fullBatchReady || (finishing && chunk.length > 0);
+  if (!needNote && !finishing) return { state: "waiting", ...base };
+  // Forced on a session whose summary already covers every frame: nothing new to do.
+  if (!needNote && force && session.summary && session.status !== "analysing" && session.summary_frames === snaps.length) {
+    return { state: "done", ...base };
+  }
 
   if (!(await lock(sessionId))) return { state: "busy", ...base };
   try {
@@ -103,10 +111,10 @@ export async function analyseStep(sessionId: string): Promise<StepResult> {
       await sql`update sessions set analysed_count = ${from + chunk.length}, ai_error = null where id = ${sessionId}`;
       await sql`insert into events (worker_id, type, message, data) values (${session.worker_id}, 'ai_note', ${text},
         ${JSON.stringify({ session_id: sessionId, idx: noteCount })}::jsonb)`;
-      return { state: "working", notes: noteCount + 1, total: snaps.length };
+      return { state: "working", notes: noteCount + 1, total: snaps.length, analysed: from + chunk.length };
     }
 
-    // Ended and every photo is noted: write the final summary.
+    // Every photo is noted: write the summary (final if ended, "so far" if still recording).
     if (snaps.length === 0) {
       await sql`update sessions set status = 'empty', summary = ${"No photos were captured in this session."} where id = ${sessionId}`;
       return { state: "done", ...base };
@@ -114,19 +122,30 @@ export async function analyseStep(sessionId: string): Promise<StepResult> {
     const notes = (await sql`select from_at, to_at, text from session_notes where session_id = ${sessionId} order by idx`) as { from_at: string; to_at: string; text: string }[];
     const timeline = notes.map((n) => `${ist(n.from_at)}–${ist(n.to_at)}: ${n.text}`).join("\n");
     const parts = await imageParts(sample(snaps, 8));
+    const live = !ended;
+    const latest = sample(snaps.slice(-3), 3);
+    const alertRows = (await sql`select r.name, a.created_at, a.reason from alerts a join alert_rules r on r.id = a.rule_id
+      where a.session_id = ${sessionId} and not a.false_alarm order by a.created_at`) as { name: string; created_at: string; reason: string }[];
     const summary = await model.generate({
       system: SYSTEM(session.worker_name, s.ai_language),
       turns: [{ role: "user", parts: [
         ...parts,
-        { text: `Session from ${ist(session.started_at)} to ${ist(session.ended_at!)} (${snaps.length} photos, ${session.mode} mode).\n` +
-          `Timeline notes:\n${timeline}\n\nWrite a short report for the shop owner: 1) a 2-3 sentence overview of what ` +
-          `${session.worker_name} did and how well they were working, 2) up to 5 bullet points of notable moments with times ` +
-          `(phone use, idle time, cash handling, customers). Plain text, no markdown headings.` },
+        ...(live ? [{ text: "Most recent photos (what is happening right now):" } as AiPart, ...(await imageParts(latest))] : []),
+        { text: `Session from ${ist(session.started_at)} to ${live ? `now (${ist(snaps[snaps.length - 1].taken_at)}, still recording)` : ist(session.ended_at!)} ` +
+          `(${snaps.length} ${session.mode === "video" ? "video frames" : "photos"}).\n` +
+          `Timeline notes:\n${timeline}\n` +
+          (alertRows.length ? `Alerts:\n${alertRows.map((a) => `${ist(a.created_at)} ${a.name}: ${a.reason}`).join("\n")}\n` : "") +
+          `\nWrite a short report for the shop owner in plain text, no markdown headings:\n` +
+          (live ? `WHAT IS HAPPENING NOW: 1-2 sentences about the latest photos.\n` : "") +
+          `WHAT HAPPENED: 2-3 sentences overview of what ${session.worker_name} did and how well they were working.\n` +
+          `KEY MOMENTS: up to 5 bullet points with times (phone use, idle time, cash handling, customers).` },
       ] }],
-      maxOutputTokens: 900,
+      maxOutputTokens: 1000,
     });
-    await sql`update sessions set summary = ${summary}, status = 'done', ai_error = null where id = ${sessionId}`;
-    await sql`insert into session_messages (session_id, role, content) values (${sessionId}, 'assistant', ${summary})`;
+    await sql`update sessions set summary = ${summary}, summary_at = now(), summary_frames = ${snaps.length},
+      status = case when ended_at is null then 'recording' else 'done' end, ai_error = null where id = ${sessionId}`;
+    await sql`insert into session_messages (session_id, role, content)
+      values (${sessionId}, 'assistant', ${live ? `Update at ${ist(new Date().toISOString())} (still recording):\n${summary}` : summary})`;
     await sql`insert into events (worker_id, type, message, data) values (${session.worker_id}, 'ai_summary',
       ${`Session summary ready: ${summary.slice(0, 160)}`}, ${JSON.stringify({ session_id: sessionId })}::jsonb)`;
     return { state: "done", notes: notes.length, total: snaps.length };
@@ -142,10 +161,10 @@ export async function analyseStep(sessionId: string): Promise<StepResult> {
 }
 
 /** Runs steps until done or ~50 s have passed (for use in background after()). */
-export async function analyseFor(sessionId: string, budgetMs = 50_000) {
+export async function analyseFor(sessionId: string, budgetMs = 50_000, force = false) {
   const t0 = Date.now();
   while (Date.now() - t0 < budgetMs) {
-    const r = await analyseStep(sessionId);
+    const r = await analyseStep(sessionId, force);
     if (r.state !== "working") return r;
   }
 }

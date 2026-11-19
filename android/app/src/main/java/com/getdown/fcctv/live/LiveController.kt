@@ -109,7 +109,13 @@ object LiveController {
         net = InternetNetwork(application)
         backend = Backend(net)
         _state.update { it.copy(deviceName = prefs.deviceName, paired = prefs.deviceToken != null, workerName = prefs.pairedWorkerName) }
-        scope.launch { glasses.state.collect { s -> _state.update { it.copy(link = s) } } }
+        // Only report a battery number while the glasses are actually connected.
+        scope.launch {
+            glasses.state.collect { s ->
+                _state.update { it.copy(link = s, battery = if (s == LinkState.CONNECTED) it.battery else null) }
+                if (s == LinkState.CONNECTED) glasses.requestBattery()
+            }
+        }
         scope.launch {
             glasses.events.collect { e ->
                 if (e is GlassEvent.Battery) _state.update { it.copy(battery = e.percent, charging = e.charging) }
@@ -202,10 +208,13 @@ object LiveController {
 
     private fun status(mode: String): JSONObject {
         val s = _state.value
+        val connected = glasses.state.value == LinkState.CONNECTED
+        if (connected) glasses.requestBattery()
         return JSONObject()
             .put("mode", mode)
-            .put("battery", s.battery ?: JSONObject.NULL)
-            .put("charging", s.charging)
+            .put("glasses_connected", connected)
+            .put("battery", if (connected) s.battery ?: JSONObject.NULL else JSONObject.NULL)
+            .put("charging", if (connected && s.battery != null) s.charging else JSONObject.NULL)
             .put("phone_battery", phoneBattery() ?: JSONObject.NULL)
             .put("detail", s.detail)
             .put("glasses_name", prefs.deviceName ?: JSONObject.NULL)
