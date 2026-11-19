@@ -2,6 +2,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { randomBytes, scrypt as _scrypt, timingSafeEqual, createHash } from "node:crypto";
 import { promisify } from "node:util";
+import { dbUrl } from "./db";
 
 const scrypt = promisify(_scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
 export const SESSION_COOKIE = "fcctv_session";
@@ -10,7 +11,7 @@ export const SESSION_COOKIE = "fcctv_session";
 function secret() {
   const explicit = process.env.SESSION_SECRET;
   if (explicit && explicit.length >= 32) return new TextEncoder().encode(explicit);
-  const db = process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? process.env.NEON_DATABASE_URL;
+  const db = dbUrl;
   if (!db) throw new Error("Server not configured (no database)");
   return new TextEncoder().encode(createHash("sha256").update("fcctv-session-v1:" + db).digest("hex"));
 }

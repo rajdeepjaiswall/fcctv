@@ -1,7 +1,19 @@
 import { neon } from "@neondatabase/serverless";
 
 /** Neon connection string, set by Vercel's Neon integration (DATABASE_URL) or manually. */
-const url = process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? process.env.NEON_DATABASE_URL;
+function findDbUrl(): string | undefined {
+  const env = process.env;
+  const preferred = ["DATABASE_URL", "POSTGRES_URL", "NEON_DATABASE_URL"];
+  for (const k of preferred) if (env[k]?.startsWith("postgres")) return env[k];
+  // Vercel's Neon integration can add a custom prefix (e.g. STORAGE_DATABASE_URL, FCCTV_POSTGRES_URL).
+  const keys = Object.keys(env).filter((k) => /(DATABASE_URL|POSTGRES_URL)$/.test(k) && !/UNPOOLED|NON_POOLING/.test(k));
+  for (const k of keys) if (env[k]?.startsWith("postgres")) return env[k];
+  for (const k of Object.keys(env)) if (/_URL$/.test(k) && env[k]?.startsWith("postgres")) return env[k];
+  return undefined;
+}
+
+export const dbUrl = findDbUrl();
+const url = dbUrl;
 
 export const sql = neon(url ?? "postgres://missing:missing@localhost/missing");
 
