@@ -15,5 +15,6 @@ export const GET = admin(async () => {
     ...r,
     frame_url: r.latest_frame_key ? await signedUrl(String(r.latest_frame_key), 300) : null,
   })));
-  return json({ workers: out, now: new Date().toISOString() });
+  const unseen = ((await sql`select count(*)::int as n from alerts where not seen and not false_alarm`) as { n: number }[])[0].n;
+  return json({ workers: out, unseen_alerts: unseen, now: new Date().toISOString() });
 });

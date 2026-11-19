@@ -9,9 +9,10 @@ type Session = {
   snapshots: number; summary: string | null; ai_error: string | null; analysed_count: number;
 };
 type Note = { id: string; idx: number; from_at: string; to_at: string; text: string; thumbs: string[] };
-type Msg = { id: string; role: "user" | "assistant"; content: string; created_at: string };
+type Msg = { id: string; role: "user" | "assistant"; content: string; created_at: string; pending?: boolean };
+type SAlert = { id: string; created_at: string; reason: string; false_alarm: boolean; rule_name: string; image: string | null };
 type Snap = { id: string; taken_at: string; url: string | null };
-type Data = { session: Session; notes: Note[]; messages: Msg[]; snapshots: Snap[] };
+type Data = { session: Session; notes: Note[]; messages: Msg[]; snapshots: Snap[]; alerts: SAlert[] };
 
 export default function SessionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -43,8 +44,9 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   }, [load]);
 
   const status = d?.session.status;
+  const waiting = !!d?.messages.some((m) => m.pending);
   useEffect(() => {
-    if (status !== "analysing" && status !== "recording") return;
+    if (status !== "analysing" && status !== "recording" && !waiting) return;
     let stop = false;
     const tick = async () => {
       if (stepping.current || stop) return;
@@ -53,9 +55,9 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
       stepping.current = false;
     };
     tick();
-    const t = setInterval(tick, status === "analysing" ? 3000 : 20000);
+    const t = setInterval(tick, status === "analysing" || waiting ? 4000 : 20000);
     return () => { stop = true; clearInterval(t); };
-  }, [id, status]);
+  }, [id, status, waiting]);
 
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth" }); }, [d?.messages.length, pending]);
 
@@ -104,12 +106,31 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
         </ul>
       )}
 
+      {d.alerts.length > 0 && (
+        <>
+          <h2>Alerts in this session ({d.alerts.filter((a) => !a.false_alarm).length})</h2>
+          <ul className="list">
+            {d.alerts.map((a) => (
+              <li key={a.id} className="row" style={{ flexWrap: "nowrap", opacity: a.false_alarm ? 0.5 : 1 }}>
+                {a.image && <img src={a.image} alt="" style={{ width: 72, borderRadius: 8 }} />}
+                <span><b>{timeIST(a.created_at)} · {a.rule_name}</b>{a.false_alarm ? " (false alarm)" : ""}<br /><span className="small">{a.reason}</span></span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
       <h2>Chat about this session</h2>
       <div className="card card-body">
         {d.messages.length === 0 && !pending && (
           <p className="muted small">{s.status === "recording" ? "Stop the session to get the summary. You can already ask questions about what's been captured." : "The summary will appear here as the first message."}</p>
         )}
-        {d.messages.map((m) => <Bubble key={m.id} role={m.role} text={m.content} at={m.created_at} />)}
+        {d.messages.map((m) => (
+          <div key={m.id}>
+            <Bubble role={m.role} text={m.content} at={m.created_at} />
+            {m.pending && <Bubble role="assistant" text="AI is busy right now — your question is queued and will be answered here in a moment." />}
+          </div>
+        ))}
         {pending && <><Bubble role="user" text={pending} /><Bubble role="assistant" text="Looking at the photos…" /></>}
         <div ref={bottom} />
         <div className="row" style={{ margin: "10px 0" }}>

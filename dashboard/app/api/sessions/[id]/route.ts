@@ -14,12 +14,15 @@ export const GET = admin(async (_req: Request, ctx: Ctx) => {
   const urls = new Map<string, string | null>();
   await Promise.all(snaps.map(async (s) => urls.set(s.id, await signedUrl(s.key, 3600))));
   const notes = (await sql`select id, idx, from_at, to_at, text, snapshot_ids from session_notes where session_id = ${id} order by idx`) as { snapshot_ids: string[] }[];
-  const messages = await sql`select id, role, content, created_at from session_messages where session_id = ${id} order by created_at`;
+  const messages = await sql`select id, role, content, created_at, pending from session_messages where session_id = ${id} order by created_at`;
+  const alerts = (await sql`select a.id, a.created_at, a.reason, a.false_alarm, r.name as rule_name, a.snapshot_id
+    from alerts a join alert_rules r on r.id = a.rule_id where a.session_id = ${id} order by a.created_at`) as { snapshot_id: string | null }[];
   return json({
     session,
     snapshots: snaps.map((s) => ({ id: s.id, taken_at: s.taken_at, source: s.source, url: urls.get(s.id) })),
     notes: notes.map((n) => ({ ...n, thumbs: n.snapshot_ids.slice(0, 10).map((sid) => urls.get(sid)).filter(Boolean) })),
     messages,
+    alerts: alerts.map((a) => ({ ...a, image: a.snapshot_id ? urls.get(a.snapshot_id) ?? null : null })),
   });
 });
 

@@ -1,0 +1,9 @@
+{
+  "name": "FCCTV by Get Down Foundation",
+  "short_name": "FCCTV",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#8a4b22",
+  "icons": [{ "src": "/logo-icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }]
+}

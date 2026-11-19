@@ -1,7 +1,10 @@
+import { after } from "next/server";
 import { sql, getSettings, withinHours } from "@/lib/db";
+import { backgroundTick } from "@/lib/analysis";
 import { json, device } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 /** Phone reports status every few seconds; we answer with what it should be doing. */
 export const POST = device(async (req, dev) => {
@@ -18,6 +21,8 @@ export const POST = device(async (req, dev) => {
       live_requested: boolean; duty_requested: boolean; capture_mode: string; active_session_id: string | null }[];
   const d = rows[0];
   const allowed = inHours && dev.active;
+  // Phones heartbeat every few seconds; use that to finish queued AI work in the background.
+  after(() => backgroundTick().catch(() => undefined));
   return json({
     worker_name: dev.worker_name,
     active: dev.active,

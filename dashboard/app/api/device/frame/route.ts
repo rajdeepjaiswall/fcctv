@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import { sql, getSettings } from "@/lib/db";
 import { analyseFor } from "@/lib/analysis";
+import { checkFrame } from "@/lib/rules";
 import { json, device } from "@/lib/http";
 import { putJpeg, r2Configured } from "@/lib/r2";
 
@@ -38,6 +39,8 @@ export const POST = device(async (req, dev) => {
               ${bat}, ${jpeg.length}, ${takenAt.toISOString()})
       returning id`) as { id: string }[];
     snapshotId = rows[0].id;
+    const sid = snapshotId;
+    after(() => checkFrame(dev.id, dev.worker_id, sessionId, sid));
     if (sessionId) {
       const r = (await sql`update sessions set snapshots = snapshots + 1 where id = ${sessionId} and device_id = ${dev.id}
         returning snapshots`) as { snapshots: number }[];

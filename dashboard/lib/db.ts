@@ -105,6 +105,44 @@ const SCHEMA = [
   `alter table settings add column if not exists auto_analyse boolean not null default true`,
   `alter table settings add column if not exists default_capture_mode text not null default 'images'`,
   `alter table settings add column if not exists video_save_every_sec int not null default 3`,
+  // ---- Alerts: plain-language rules checked by AI on every frame
+  `alter table settings add column if not exists ai_models text`,
+  `alter table settings add column if not exists detection_enabled boolean not null default true`,
+  `alter table settings add column if not exists check_every_sec int not null default 10`,
+  `alter table settings add column if not exists vapid_public text`,
+  `alter table settings add column if not exists vapid_private text`,
+  `create table if not exists alert_rules (
+     id uuid primary key default gen_random_uuid(),
+     text text not null, name text, look_for text, alert_message text, ai_note text,
+     understood boolean not null default false, alert_enabled boolean not null default false,
+     min_duration_sec int not null default 0, min_confidence real not null default 0.6, cooldown_sec int not null default 300,
+     worker_ids uuid[], created_at timestamptz not null default now())`,
+  `create table if not exists alerts (
+     id uuid primary key default gen_random_uuid(),
+     rule_id uuid references alert_rules on delete cascade,
+     worker_id uuid references workers on delete cascade,
+     session_id uuid references sessions on delete set null,
+     snapshot_id uuid references snapshots on delete set null,
+     confidence real, reason text, notified boolean not null default false,
+     seen boolean not null default false, false_alarm boolean not null default false,
+     created_at timestamptz not null default now())`,
+  `create index if not exists alerts_time on alerts (created_at desc)`,
+  `create index if not exists alerts_rule_worker on alerts (rule_id, worker_id, created_at desc)`,
+  `create table if not exists rule_state (
+     rule_id uuid not null references alert_rules on delete cascade,
+     worker_id uuid not null references workers on delete cascade,
+     first_seen timestamptz not null, last_seen timestamptz not null,
+     primary key (rule_id, worker_id))`,
+  `create table if not exists push_subscriptions (
+     id uuid primary key default gen_random_uuid(), endpoint text unique not null,
+     p256dh text not null, auth text not null, label text, created_at timestamptz not null default now())`,
+  `alter table devices add column if not exists last_check_at timestamptz`,
+  `alter table session_messages add column if not exists pending boolean not null default false`,
+  `insert into alert_rules (text, name, look_for, alert_message, understood, alert_enabled, min_confidence, cooldown_sec)
+     select 'Using a mobile phone', 'Phone use',
+       'The wearer is holding a mobile phone in their hand(s) and looking at, typing on, or talking on it. A phone lying on a counter, a shop billing tablet or a customer''s phone does not count.',
+       'is using their phone', true, true, 0.65, 180
+     where not exists (select 1 from alert_rules)`,
 ];
 
 let ready: Promise<void> | null = null;
@@ -125,6 +163,8 @@ export type Settings = {
   r2_account_id: string | null; r2_access_key: string | null; r2_secret_key: string | null; r2_bucket: string | null;
   gemini_api_key: string | null; ai_model: string; ai_language: "en" | "hi"; summary_batch: number; auto_analyse: boolean;
   default_capture_mode: "images" | "video"; video_save_every_sec: number;
+  ai_models: string | null; detection_enabled: boolean; check_every_sec: number;
+  vapid_public: string | null; vapid_private: string | null;
 };
 
 export async function getSettings(): Promise<Settings> {

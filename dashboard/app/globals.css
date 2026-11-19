@@ -90,3 +90,16 @@ h2 { font-size: 18px; margin: 22px 0 10px; color: var(--muddy-brown); }
 .login-card .logo { display: block; width: 96px; height: 96px; margin: -74px auto 10px; border-radius: 22px; box-shadow: 0 8px 24px rgba(17,17,17,.3); background: var(--white); }
 .login-card h1 { text-align: center; margin: 0; font-size: 30px; }
 .login-card .by { text-align: center; color: var(--muddy-brown); margin: 2px 0 20px; font-weight: 600; }
+
+.nav .count { display: inline-block; min-width: 20px; padding: 1px 6px; margin-left: 6px; border-radius: 999px;
+  background: var(--leafy-green); color: var(--black); font-size: 12px; font-weight: 800; text-align: center; }
+.toast { position: fixed; top: 76px; left: 50%; transform: translateX(-50%); z-index: 60; max-width: 92vw;
+  background: var(--muddy-brown-dark); color: var(--white); padding: 12px 16px; border-radius: 14px; font-weight: 700;
+  text-decoration: none; box-shadow: 0 10px 30px rgba(17,17,17,.35); border-left: 6px solid var(--leafy-green); }
+.tick { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--leafy-green); color: var(--black); font-weight: 900; font-size: 14px; }
+.chip { display: inline-block; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); font-size: 13px; }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; min-width: 150px; }
+.stat b { font-size: 26px; display: block; color: var(--muddy-brown); }
+@media (prefers-color-scheme: dark) { .stat b { color: var(--leafy-green); } }
+.btn.small { padding: 6px 10px; font-size: 13px; border-radius: 10px; }

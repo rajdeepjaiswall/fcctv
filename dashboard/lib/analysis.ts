@@ -9,7 +9,7 @@
  */
 import { sql, getSettings } from "./db";
 import { getObject } from "./r2";
-import { getVisionModel, languageName, type AiPart } from "./ai";
+import { getVisionModel, languageName, AiBusyError, type AiPart } from "./ai";
 
 type Snap = { id: string; key: string; taken_at: string };
 type Session = {
@@ -131,6 +131,8 @@ export async function analyseStep(sessionId: string): Promise<StepResult> {
       ${`Session summary ready: ${summary.slice(0, 160)}`}, ${JSON.stringify({ session_id: sessionId })}::jsonb)`;
     return { state: "done", notes: notes.length, total: snaps.length };
   } catch (e) {
+    // All models busy: say nothing scary, just try again on the next trigger.
+    if (e instanceof AiBusyError) return { state: "busy", ...base };
     const msg = (e as Error).message;
     await sql`update sessions set ai_error = ${msg} where id = ${sessionId}`;
     return { state: "failed", ...base, error: msg };
@@ -148,21 +150,44 @@ export async function analyseFor(sessionId: string, budgetMs = 50_000) {
   }
 }
 
-/** Owner asks a question in the session chat. */
-export async function askSession(sessionId: string, question: string): Promise<string> {
+/** Owner asks a question in the session chat. Returns the answer, or null if it was queued (AI busy). */
+export async function askSession(sessionId: string, question: string): Promise<string | null> {
+  const ins = (await sql`insert into session_messages (session_id, role, content, pending)
+    values (${sessionId}, 'user', ${question}, true) returning id`) as { id: string }[];
+  try {
+    return await answer(sessionId, ins[0].id, question);
+  } catch (e) {
+    if (e instanceof AiBusyError) return null; // stays pending; answered by the next background step
+    await sql`update session_messages set pending = false where id = ${ins[0].id}`;
+    throw e;
+  }
+}
+
+/** Answers the oldest queued question in this session (if any). */
+export async function answerPending(sessionId: string): Promise<boolean> {
+  const q = (await sql`select id, content from session_messages where session_id = ${sessionId} and pending order by created_at limit 1`) as { id: string; content: string }[];
+  if (!q[0]) return false;
+  try { await answer(sessionId, q[0].id, q[0].content); return true; }
+  catch (e) { if (!(e instanceof AiBusyError)) await sql`update session_messages set pending = false where id = ${q[0].id}`; return false; }
+}
+
+async function answer(sessionId: string, messageId: string, question: string): Promise<string> {
   const session = await loadSession(sessionId);
   if (!session) throw new Error("Session not found");
   const s = await getSettings();
   const model = await getVisionModel();
   const notes = (await sql`select from_at, to_at, text from session_notes where session_id = ${sessionId} order by idx`) as { from_at: string; to_at: string; text: string }[];
   const snaps = (await sql`select id, key, taken_at from snapshots where session_id = ${sessionId} order by taken_at`) as Snap[];
-  const history = (await sql`select role, content from session_messages where session_id = ${sessionId} order by created_at desc limit 12`) as { role: string; content: string }[];
+  const history = (await sql`select role, content from session_messages where session_id = ${sessionId} and id <> ${messageId} and not pending
+    order by created_at desc limit 12`) as { role: string; content: string }[];
   history.reverse();
-  await sql`insert into session_messages (session_id, role, content) values (${sessionId}, 'user', ${question})`;
+  const alertRows = (await sql`select r.name, a.created_at, a.reason from alerts a join alert_rules r on r.id = a.rule_id
+    where a.session_id = ${sessionId} and not a.false_alarm order by a.created_at`) as { name: string; created_at: string; reason: string }[];
 
   const context =
     `Session of ${session.worker_name}: ${ist(session.started_at)} to ${session.ended_at ? ist(session.ended_at) : "now (still recording)"}, ` +
     `${snaps.length} photos.\nTimeline notes:\n${notes.map((n) => `${ist(n.from_at)}–${ist(n.to_at)}: ${n.text}`).join("\n") || "(none yet)"}\n` +
+    (alertRows.length ? `Alerts in this session:\n${alertRows.map((a) => `${ist(a.created_at)} ${a.name}: ${a.reason}`).join("\n")}\n` : "") +
     (session.summary ? `Summary:\n${session.summary}\n` : "");
   const turns = [
     { role: "user" as const, parts: [...(await imageParts(sample(snaps, 12))), { text: `${context}\nYou will now answer the owner's questions about this session.` }] },
@@ -170,11 +195,21 @@ export async function askSession(sessionId: string, question: string): Promise<s
     ...history.map((m) => ({ role: (m.role === "assistant" ? "model" : "user") as "user" | "model", parts: [{ text: m.content }] })),
     { role: "user" as const, parts: [{ text: question }] },
   ];
-  const answer = await model.generate({
-    system: SYSTEM(session.worker_name, s.ai_language) + " Answer the owner's question using the photos and notes; say so if the photos don't show it.",
+  const text = await model.generate({
+    system: SYSTEM(session.worker_name, s.ai_language) + " Answer the owner's question using the photos, notes and alerts; say so if they don't show it.",
     turns,
     maxOutputTokens: 800,
   });
-  await sql`insert into session_messages (session_id, role, content) values (${sessionId}, 'assistant', ${answer})`;
-  return answer;
+  await sql`insert into session_messages (session_id, role, content) values (${sessionId}, 'assistant', ${text})`;
+  await sql`update session_messages set pending = false where id = ${messageId}`;
+  return text;
+}
+
+/** Background worker: finish one pending analysis or queued question anywhere. Safe to call often. */
+export async function backgroundTick(budgetMs = 20_000) {
+  const q = (await sql`select distinct session_id from session_messages where pending limit 1`) as { session_id: string }[];
+  if (q[0]) { await answerPending(q[0].session_id); return; }
+  const s = (await sql`select id from sessions where status = 'analysing' and (ai_lock_until is null or ai_lock_until < now())
+    order by ended_at limit 1`) as { id: string }[];
+  if (s[0]) await analyseFor(s[0].id, budgetMs);
 }

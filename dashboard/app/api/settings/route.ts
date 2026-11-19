@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 /** Never send secret keys back to the browser. */
 function publicView(s: Settings) {
-  const { r2_secret_key, r2_access_key, gemini_api_key, ...rest } = s;
+  const { r2_secret_key, r2_access_key, gemini_api_key, vapid_private, ...rest } = s;
   return {
     ...rest,
     r2_access_key_hint: r2_access_key ? `…${r2_access_key.slice(-4)}` : null,
@@ -42,6 +42,9 @@ export const PUT = admin(async (req: Request) => {
     auto_analyse = ${typeof b.auto_analyse === "boolean" ? b.auto_analyse : cur.auto_analyse},
     default_capture_mode = ${b.default_capture_mode === "video" || b.default_capture_mode === "images" ? b.default_capture_mode : cur.default_capture_mode},
     video_save_every_sec = ${int(b.video_save_every_sec, 1, 30, cur.video_save_every_sec)},
+    ai_models = ${typeof b.ai_models === "string" ? b.ai_models.split(",").map((x: string) => x.trim()).filter((x: string) => /^[\w.\-]{3,80}$/.test(x)).slice(0, 6).join(",") || null : cur.ai_models},
+    detection_enabled = ${typeof b.detection_enabled === "boolean" ? b.detection_enabled : cur.detection_enabled},
+    check_every_sec = ${int(b.check_every_sec, 5, 120, cur.check_every_sec)},
     updated_at = now() where id = 1`;
   clearR2Cache();
   const r2Error = b.testR2 ? await testR2() : null;

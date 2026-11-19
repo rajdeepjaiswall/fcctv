@@ -5,6 +5,7 @@ export const metadata: Metadata = {
   title: "FCCTV by Get Down Foundation",
   description: "Owner dashboard for FCCTV wearable cameras",
   icons: { icon: "/favicon.png", apple: "/logo-icon.png" },
+  manifest: "/manifest.webmanifest",
 };
 export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#8a4b22" };
 

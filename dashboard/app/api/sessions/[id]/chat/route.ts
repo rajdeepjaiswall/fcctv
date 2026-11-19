@@ -10,5 +10,6 @@ export const POST = admin(async (req: Request, ctx: Ctx) => {
   const b = await req.json().catch(() => ({}));
   const q = String(b.question ?? "").trim().slice(0, 1000);
   if (!q) return json({ error: "Type a question." }, 400);
-  return json({ answer: await askSession(id, q) });
+  const answer = await askSession(id, q);
+  return json(answer === null ? { queued: true } : { answer });
 });

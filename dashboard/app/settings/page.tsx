@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Shell from "@/components/Shell";
+import AlertActions from "@/components/AlertActions";
 import { api } from "@/lib/client";
 
 type S = {
@@ -8,6 +9,7 @@ type S = {
   r2_account_id: string | null; r2_bucket: string | null; r2_access_key_hint: string | null; r2_has_secret: boolean;
   gemini_key_hint: string | null; ai_model: string; ai_language: string; summary_batch: number; auto_analyse: boolean;
   default_capture_mode: string; video_save_every_sec: number;
+  ai_models: string | null; detection_enabled: boolean; check_every_sec: number;
 };
 
 export default function Settings() {
@@ -107,6 +109,26 @@ export default function Settings() {
         }}>{testing ? "Testing…" : "Save & test key"}</button>
         {aiMsg && <div className="ok">{aiMsg}</div>}
         {aiErr && <div className="alert">{aiErr}{models.length > 0 ? " — pick a model from the list above and test again." : ""}</div>}
+        {models.length > 1 && (
+          <div className="field"><label>Backup models (used automatically when the main one is busy)</label>
+            <div className="row" style={{ gap: 6 }}>
+              {models.filter((m) => m !== s.ai_model).slice(0, 10).map((m) => {
+                const list = (s.ai_models ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+                const on = list.includes(m);
+                return <button key={m} type="button" className={`btn small ${on ? "" : "ghost"}`}
+                  onClick={() => set("ai_models", (on ? list.filter((x) => x !== m) : [...list, m]).join(","))}>{on ? "✓ " : ""}{m}</button>;
+              })}
+            </div>
+            <span className="muted small">Even with none picked, FCCTV tries your other Flash models before giving up, and retries busy work later instead of showing an error.</span>
+          </div>
+        )}
+        <div className="field">
+          <label><input type="checkbox" checked={s.detection_enabled} onChange={(e) => set("detection_enabled", e.target.checked)} /> Check photos for alert actions while recording</label>
+        </div>
+        <div className="field"><label htmlFor="ce">Check for alerts at most every</label>
+          <select id="ce" className="input" value={s.check_every_sec} onChange={(e) => set("check_every_sec", Number(e.target.value))}>
+            {[5, 10, 15, 30, 60].map((n) => <option key={n} value={n}>{n} seconds</option>)}
+          </select></div>
         <div className="field">
           <label><input type="checkbox" checked={s.auto_analyse} onChange={(e) => set("auto_analyse", e.target.checked)} /> Analyse automatically (timeline notes while recording, summary when stopped)</label>
         </div>
@@ -123,7 +145,7 @@ export default function Settings() {
         {error && <div className="alert">{error}</div>}
         <button className="btn">Save settings</button>
       </form>
-      
+      <AlertActions />
     </Shell>
   );
 }
