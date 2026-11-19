@@ -55,7 +55,7 @@ export default function WorkerPage({ params }: { params: Promise<{ id: string }>
 
   if (!d) return <Shell>{error ? <div className="alert">{error}</div> : <p className="muted">Loading…</p>}</Shell>;
   const dev = d.device;
-  const st = liveStatus({ mode: dev?.mode ?? null, last_seen: dev?.last_seen ?? null, paired_at: dev?.paired_at ?? null }, now);
+  const st = liveStatus({ mode: dev?.mode ?? null, last_seen: dev?.last_seen ?? null, paired_at: dev?.paired_at ?? null, live_requested: dev?.live_requested ?? null }, now);
   const g = batteryText(dev?.battery ?? null, dev?.battery_at ?? null, dev?.charging, now);
   const p = batteryText(dev?.phone_battery ?? null, dev?.phone_battery_at ?? null, false, now);
   const showFrame = !!dev && (dev.mode === "live" || dev.mode === "snapshot" || !!dev.active_session_id || dev.live_requested);

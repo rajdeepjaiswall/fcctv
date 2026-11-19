@@ -49,11 +49,11 @@ export function batteryText(pct: number | null, at: string | null, charging?: bo
 }
 
 /** What to show on a worker's badge. */
-export function liveStatus(w: { mode: string | null; last_seen: string | null; paired_at: string | null }, now = Date.now()) {
+export function liveStatus(w: { mode: string | null; last_seen: string | null; paired_at: string | null; live_requested?: boolean | null }, now = Date.now()) {
   if (!w.paired_at) return { cls: "warn", label: "Not paired" };
   const fresh = w.last_seen && now - new Date(w.last_seen).getTime() < 60_000;
   if (!fresh) return { cls: "off", label: "Offline" };
-  if (w.mode === "live") return { cls: "live", label: "LIVE" };
+  if (w.mode === "live") return { cls: "live", label: w.live_requested === false ? "Recording video" : "LIVE feed" };
   if (w.mode === "snapshot") return { cls: "live", label: "Recording photos" };
   if (w.mode === "paused") return { cls: "warn", label: "Outside hours" };
   if (w.mode === "standby") return { cls: "snap", label: "Ready" };

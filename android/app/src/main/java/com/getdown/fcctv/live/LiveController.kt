@@ -330,7 +330,10 @@ object LiveController {
     private suspend fun runLive() {
         val mac = prefs.deviceAddress ?: throw IllegalStateException("No glasses selected")
         ensureBluetooth()
-        _state.update { it.copy(phase = LivePhase.STARTING, detail = "Owner requested video; starting camera") }
+        _state.update {
+            it.copy(phase = LivePhase.STARTING,
+                detail = if (config.value.liveRequested) "Owner opened the live feed; starting camera" else "Owner started video; starting camera")
+        }
         val liveWanted = {
             val c = config.value
             duty && (c.liveRequested || (c.duty && c.captureMode == "video")) && c.withinHours && c.active
@@ -371,7 +374,8 @@ object LiveController {
         val battery = _state.value.battery
         val c = config.value
         val keepEveryMs = if (c.captureMode == "video") c.videoSaveEverySec * 1000L else c.snapshotIntervalSec * 1000L
-        if (c.duty && c.sessionId != null && now - lastSnapshotAt >= keepEveryMs) {
+        // Live feed overrides recording: while the owner watches, nothing is saved to the session.
+        if (!c.liveRequested && c.duty && c.sessionId != null && now - lastSnapshotAt >= keepEveryMs) {
             lastSnapshotAt = now
             uploader?.snapshot(Frame(jpeg, now, battery, fromLive = true))
         } else if (now - lastLiveSentAt >= 1000L / config.value.liveFps.coerceIn(1, 5) - 50) {
@@ -379,7 +383,8 @@ object LiveController {
             uploader?.live(Frame(jpeg, now, battery, fromLive = true))
         }
         _state.update {
-            it.copy(phase = LivePhase.LIVE, detail = if (c.duty) "Recording video for the owner" else "Owner is watching the live feed",
+            it.copy(phase = LivePhase.LIVE,
+                detail = if (c.liveRequested) "Owner is watching the live feed (not recorded)" else "Recording video for the owner",
                 frames = it.frames + 1, fps = fps, frameBytes = jpeg.size)
         }
     }

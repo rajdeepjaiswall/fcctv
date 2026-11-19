@@ -66,7 +66,7 @@ class LiveService : Service() {
 
     private fun build(s: LiveState): Notification {
         val title = when (s.phase) {
-            LivePhase.LIVE -> if (s.recording) "● RECORDING VIDEO for the owner" else "● LIVE · Owner is watching the camera"
+            LivePhase.LIVE -> if (s.detail.contains("live feed")) "● LIVE · Owner is watching (not recorded)" else "● RECORDING VIDEO for the owner"
             LivePhase.SNAPSHOT -> "● RECORDING · Photo every ${s.snapshotEverySec}s to the owner"
             LivePhase.STANDBY -> "FCCTV ready · camera off"
             LivePhase.STARTING -> "Starting camera…"

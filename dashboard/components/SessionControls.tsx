@@ -41,10 +41,16 @@ export default function SessionControls({ workerId, paired, online, sessionId, m
           </>
         )}
         <button className={`btn ${liveRequested ? "brown" : "ghost"}`} disabled={busy} onClick={() => run({ live: !liveRequested }, "patch")}>
-          {liveRequested ? "Hide live feed" : "Live feed"}
+          {liveRequested ? "Close live feed" : "Live feed"}
         </button>
       </div>
-      {sessionId && <p className="muted small" style={{ margin: "6px 0 0" }}>Recording {mode === "video" ? "video" : "photos"}{!online ? " — phone is offline, it will start when it reconnects" : ""}.</p>}
+      {liveRequested && (
+        <p className="small" style={{ margin: "6px 0 0" }}>
+          <b>Live feed is on.</b> You&apos;re seeing the glasses camera directly; nothing is saved.
+          {sessionId ? " The session is paused and its photos continue when you close the live feed." : ""}
+        </p>
+      )}
+      {sessionId && !liveRequested && <p className="muted small" style={{ margin: "6px 0 0" }}>Recording {mode === "video" ? "video" : "photos"}{!online ? " — phone is offline, it will start when it reconnects" : ""}.</p>}
       {!sessionId && !online && <p className="muted small" style={{ margin: "6px 0 0" }}>Phone is offline. The worker must open FCCTV and tap “Be ready”.</p>}
       {err && <div className="alert" style={{ marginTop: 8 }}>{err}</div>}
     </div>

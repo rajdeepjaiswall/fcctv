@@ -18,7 +18,9 @@ export const POST = device(async (req, dev) => {
   if (!(await r2Configured())) return json({ error: "Photo storage (R2) not configured on the server yet." }, 503);
   const jpeg = new Uint8Array(await req.arrayBuffer());
   if (jpeg.length < 500 || jpeg.length > MAX || jpeg[0] !== 0xff || jpeg[1] !== 0xd8) return json({ error: "not a JPEG" }, 400);
-  const live = req.headers.get("x-kind") === "live";
+  // While the owner has the live feed open, nothing is recorded: every frame is just the live picture.
+  const liveFeed = ((await sql`select live_requested from devices where id = ${dev.id}`) as { live_requested: boolean }[])[0]?.live_requested;
+  const live = req.headers.get("x-kind") === "live" || !!liveFeed;
   const battery = Number.parseInt(req.headers.get("x-battery") ?? "", 10);
   const bat = Number.isFinite(battery) ? battery : null;
   const sessionHeader = req.headers.get("x-session") ?? "";
