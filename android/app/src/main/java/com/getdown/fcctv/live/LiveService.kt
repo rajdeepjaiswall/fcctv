@@ -65,9 +65,11 @@ class LiveService : Service() {
 
     private fun build(s: LiveState): Notification {
         val title = when (s.phase) {
-            LivePhase.LIVE -> "● LIVE · Camera is streaming to the owner"
+            LivePhase.LIVE -> "● LIVE · Video is streaming to the owner"
+            LivePhase.SNAPSHOT -> "● ON DUTY · Glasses photo every ${s.snapshotEverySec}s to the owner"
             LivePhase.STARTING -> "Starting camera…"
             LivePhase.RETRYING -> "Reconnecting camera…"
+            LivePhase.PAUSED -> "Camera paused"
             LivePhase.OFF -> "Camera off"
         }
         val text = buildString {
@@ -87,7 +89,7 @@ class LiveService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .addAction(0, "Stop streaming", stop)
+            .addAction(0, "Stop duty", stop)
             .build()
     }
 

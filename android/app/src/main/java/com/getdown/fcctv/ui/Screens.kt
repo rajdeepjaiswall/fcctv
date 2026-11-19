@@ -71,6 +71,8 @@ import com.getdown.fcctv.glasses.GlassesScanner
 import com.getdown.fcctv.glasses.LinkState
 import com.getdown.fcctv.live.LiveController
 import com.getdown.fcctv.live.LivePhase
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 
 // ------------------------------------------------------------------ shared pieces
 
@@ -118,7 +120,7 @@ fun ConsentScreen(initialName: String, onAccept: (String) -> Unit, onDecline: ()
         BrandHeader("Before you start")
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("Camera notice for workers", fontWeight = FontWeight.Bold, fontSize = 22.sp)
-            Text("This app connects to the smart glasses you wear and sends their live camera video to the shop owner's dashboard and phone.")
+            Text("This app connects to the smart glasses you wear and sends photos from their camera (every few seconds) and, when the owner asks, live video to the shop owner's dashboard and phone.")
             Text("• Video is streamed only while the camera is on, during working hours set by the owner.\n" +
                 "• You will always see a \"LIVE\" sign in this app and a notification while it streams.\n" +
                 "• Snapshots and clips may be saved and reviewed by the owner, including by AI tools that summarise activity.\n" +
@@ -165,9 +167,19 @@ fun HomeScreen(
             ) {
                 val bmp = remember(frame) { frame?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() } }
                 if (bmp != null) Image(bmp, "Live view from glasses", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-                else Text(if (running) s.detail.ifBlank { "Starting…" } else "Camera is off", color = Brand.White, modifier = Modifier.padding(16.dp))
+                else Text(if (running) s.detail.ifBlank { "Starting…" } else "Camera is off. Tap Start duty.", color = Brand.White, modifier = Modifier.padding(16.dp))
             }
-            if (s.frames > 0) Text("Frames: ${s.frames} · %.1f fps · %d KB".format(s.fps, s.frameBytes / 1024), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (s.frames > 0 || running) Text(
+                buildString {
+                    append("Captured ${s.frames} · sent ${s.uploaded}")
+                    if (s.phase == LivePhase.LIVE) append(" · %.1f fps".format(s.fps))
+                    append(if (s.online) " · server OK" else " · server not reached")
+                },
+                fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            s.uploadError?.let { if (running || !s.paired) Text(it, fontSize = 13.sp, color = Brand.MuddyBrown) }
+            if (!s.paired) PairCard()
+            else Text("Paired as ${s.workerName ?: "worker"}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             if (!permissionsOk) {
                 InfoCard("Permissions needed", "Allow Nearby devices, Location and Notifications so FCCTV can reach the glasses.", "Allow", onGrantPermissions)
@@ -198,7 +210,7 @@ fun HomeScreen(
                 }
             }
 
-            if (s.phase != LivePhase.LIVE && s.detail.isNotBlank()) Text(s.detail, fontSize = 14.sp)
+            if (s.detail.isNotBlank()) Text(s.detail, fontSize = 14.sp)
 
             if (batteryOptimized) {
                 InfoCard("Keep streaming with the screen off", "Allow FCCTV to run in the background so OnePlus battery saver doesn't stop it.", "Allow", onBatteryExemption)
@@ -209,12 +221,43 @@ fun HomeScreen(
         }
 
         Box(Modifier.padding(16.dp).navigationBarsPadding()) {
-            if (!running) Button(onClick = onStart, enabled = s.deviceName != null, modifier = Modifier.fillMaxWidth().height(56.dp)) {
-                Icon(Icons.Filled.Videocam, null); Spacer(Modifier.width(8.dp)); Text("Start live stream", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            if (!running) Button(onClick = onStart, enabled = s.deviceName != null && s.paired, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                Icon(Icons.Filled.Videocam, null); Spacer(Modifier.width(8.dp)); Text("Start duty", fontWeight = FontWeight.Bold, fontSize = 17.sp)
             } else Button(
                 onClick = onStop, modifier = Modifier.fillMaxWidth().height(56.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Brand.MuddyBrown, contentColor = Brand.White),
-            ) { Text("Stop live stream", fontWeight = FontWeight.Bold, fontSize = 17.sp) }
+            ) { Text("Stop duty", fontWeight = FontWeight.Bold, fontSize = 17.sp) }
+        }
+    }
+}
+
+@Composable
+private fun PairCard() {
+    var code by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    Card(colors = CardDefaults.cardColors(containerColor = Brand.MuddyBrown, contentColor = Brand.White)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Connect to the owner", fontWeight = FontWeight.Bold)
+            Text("Type the pairing code shown on the owner's dashboard (Workers → Add worker).", fontSize = 14.sp)
+            OutlinedTextField(
+                code, { code = it.uppercase().filter { c -> c.isLetterOrDigit() }.take(12) },
+                label = { Text("Pairing code") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Brand.White, unfocusedTextColor = Brand.White,
+                    focusedLabelColor = Brand.LeafyGreen, unfocusedLabelColor = Brand.White,
+                    focusedBorderColor = Brand.LeafyGreen, unfocusedBorderColor = Brand.White,
+                ),
+            )
+            error?.let { Text(it, fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+            Button(enabled = code.length >= 6 && !busy, onClick = {
+                busy = true; error = null
+                scope.launch {
+                    runCatching { LiveController.pair(code) }.onFailure { error = it.message ?: "Couldn't pair" }
+                    busy = false
+                }
+            }) { Text(if (busy) "Pairing…" else "Pair this phone") }
         }
     }
 }
@@ -224,9 +267,11 @@ private fun LiveBadge(phase: LivePhase) {
     val pulse = rememberInfiniteTransition(label = "pulse")
     val a by pulse.animateFloat(1f, 0.25f, infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "a")
     val (bg, fg, label) = when (phase) {
-        LivePhase.LIVE -> Triple(Brand.LeafyGreen, Brand.Black, "LIVE · Recording")
+        LivePhase.LIVE -> Triple(Brand.LeafyGreen, Brand.Black, "LIVE · Video to owner")
+        LivePhase.SNAPSHOT -> Triple(Brand.LeafyGreenDark, Brand.White, "ON DUTY · Photos to owner")
         LivePhase.STARTING -> Triple(Brand.MuddyBrown, Brand.White, "Starting camera…")
         LivePhase.RETRYING -> Triple(Brand.MuddyBrownDark, Brand.White, "Reconnecting…")
+        LivePhase.PAUSED -> Triple(Brand.MuddyBrownDark, Brand.White, "Paused")
         LivePhase.OFF -> Triple(Brand.Black, Brand.White, "Camera off")
     }
     Row(

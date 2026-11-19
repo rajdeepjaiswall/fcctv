@@ -19,6 +19,15 @@ class Prefs(context: Context) {
         get() = p.getString("device_address", null)
         set(v) = p.edit().putString("device_address", v).apply()
 
+    /** Device token from pairing with the owner's dashboard (null = not paired). */
+    var deviceToken: String?
+        get() = p.getString("device_token", null)
+        set(v) = p.edit().putString("device_token", v).apply()
+
+    var pairedWorkerName: String?
+        get() = p.getString("paired_worker", null)
+        set(v) = p.edit().putString("paired_worker", v).apply()
+
     var deviceName: String?
         get() = p.getString("device_name", null)
         set(v) = p.edit().putString("device_name", v).apply()
