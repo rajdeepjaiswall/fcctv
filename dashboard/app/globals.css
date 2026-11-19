@@ -1,0 +1,92 @@
+/* FCCTV palette — only leafy green, muddy brown, white and black (plus darker tones of green/brown). */
+:root {
+  --leafy-green: #a5e420;
+  --leafy-green-dark: #4e7a0e;
+  --muddy-brown: #8a4b22;
+  --muddy-brown-dark: #5c3216;
+  --white: #ffffff;
+  --black: #111111;
+
+  --bg: var(--white);
+  --fg: var(--black);
+  --card: #f6f2ee;
+  --muted: var(--muddy-brown-dark);
+  --line: #e4d9cf;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: var(--black); --fg: var(--white); --card: #1d1712; --muted: #d9c7b8; --line: #3a2c22; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+a { color: inherit; }
+button, input, select { font: inherit; }
+
+.topbar { background: var(--muddy-brown); color: var(--white); position: sticky; top: 0; z-index: 10; }
+.topbar-inner { max-width: 1200px; margin: 0 auto; padding: 10px 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; margin-right: auto; }
+.brand img { width: 36px; height: 36px; border-radius: 8px; }
+.brand b { font-size: 20px; display: block; line-height: 1.1; }
+.brand small { color: var(--leafy-green); font-size: 12px; }
+.nav { display: flex; gap: 4px; flex-wrap: wrap; }
+.nav a, .nav button { color: var(--white); text-decoration: none; padding: 8px 12px; border-radius: 10px; background: transparent; border: 0; cursor: pointer; font-weight: 600; }
+.nav a.on { background: var(--muddy-brown-dark); }
+
+.page { max-width: 1200px; margin: 0 auto; padding: 16px 14px 40px; }
+h1 { font-size: 22px; margin: 4px 0 14px; }
+h2 { font-size: 18px; margin: 22px 0 10px; color: var(--muddy-brown); }
+@media (prefers-color-scheme: dark) { h2 { color: var(--leafy-green); } }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+.card-body { padding: 12px 14px; }
+.frame { position: relative; aspect-ratio: 4 / 3; background: var(--black); display: flex; align-items: center; justify-content: center; color: var(--white); }
+.frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.frame .badge { position: absolute; top: 10px; left: 10px; }
+.frame .age { position: absolute; bottom: 8px; right: 10px; background: rgba(17,17,17,.7); color: var(--white); font-size: 12px; padding: 3px 8px; border-radius: 8px; }
+
+.badge { display: inline-flex; align-items: center; gap: 6px; font-weight: 800; font-size: 13px; padding: 4px 10px; border-radius: 999px; }
+.badge .dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+.badge.live { background: var(--leafy-green); color: var(--black); }
+.badge.live .dot { animation: pulse 1s infinite alternate; }
+.badge.snap { background: var(--leafy-green-dark); color: var(--white); }
+.badge.off { background: var(--black); color: var(--white); border: 1px solid #444; }
+.badge.warn { background: var(--muddy-brown); color: var(--white); }
+@keyframes pulse { from { opacity: 1 } to { opacity: .25 } }
+
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.spread { justify-content: space-between; }
+.muted { color: var(--muted); font-size: 14px; }
+.small { font-size: 13px; }
+
+.btn { border: 0; border-radius: 12px; padding: 10px 16px; font-weight: 700; cursor: pointer; background: var(--leafy-green); color: var(--black); text-decoration: none; display: inline-block; }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.brown { background: var(--muddy-brown); color: var(--white); }
+.btn.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+.btn.block { width: 100%; }
+
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.field label { font-weight: 600; font-size: 14px; }
+.input { padding: 11px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+
+.alert { background: var(--muddy-brown-dark); color: var(--white); padding: 12px 14px; border-radius: 12px; margin-bottom: 14px; }
+.ok { background: var(--leafy-green-dark); color: var(--white); padding: 12px 14px; border-radius: 12px; margin-bottom: 14px; }
+.code { font-family: ui-monospace, monospace; font-size: 30px; letter-spacing: 4px; font-weight: 800; background: var(--leafy-green); color: var(--black); padding: 10px 16px; border-radius: 12px; display: inline-block; }
+
+.thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.thumb { border: 0; padding: 0; background: var(--black); border-radius: 10px; overflow: hidden; cursor: pointer; position: relative; aspect-ratio: 4/3; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb span { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(17,17,17,.7); color: var(--white); font-size: 11px; padding: 2px 4px; }
+
+.list { list-style: none; padding: 0; margin: 0; }
+.list li { padding: 10px 0; border-bottom: 1px solid var(--line); }
+
+.lightbox { position: fixed; inset: 0; background: rgba(17,17,17,.92); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 50; padding: 14px; }
+.lightbox img { max-width: 100%; max-height: 85vh; border-radius: 10px; }
+.lightbox p { color: var(--white); }
+
+.login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;
+  background: linear-gradient(160deg, var(--muddy-brown) 0 38%, var(--bg) 38%); }
+.login-card { width: 100%; max-width: 400px; background: var(--bg); border-radius: 22px; padding: 26px; box-shadow: 0 18px 50px rgba(17,17,17,.25); border-top: 6px solid var(--leafy-green); }
+.login-card .logo { display: block; width: 96px; height: 96px; margin: -74px auto 10px; border-radius: 22px; box-shadow: 0 8px 24px rgba(17,17,17,.3); background: var(--white); }
+.login-card h1 { text-align: center; margin: 0; font-size: 30px; }
+.login-card .by { text-align: center; color: var(--muddy-brown); margin: 2px 0 20px; font-weight: 600; }
