@@ -66,6 +66,8 @@ class RtspFrameSource(
     private var session: String? = null
     private val base = "rtsp://$host:8554/ch0"
     private var codec: MediaCodec? = null
+    private var videoPackets = 0L
+    private var warnedNoSps = false
     private val accessUnit = ByteArrayOutputStream()
     private var fragment: ByteArrayOutputStream? = null
     private var sps: ByteArray? = null
@@ -97,7 +99,7 @@ class RtspFrameSource(
                     s.connect(InetSocketAddress(host, 8554), 2000); connectError = null; break
                 } catch (e: IOException) {
                     connectError = e; s.close()
-                    if (attempt % 5 == 0) Log.i(TAG, "Waiting for RTSP server on $host:8554")
+                    if (attempt % 5 == 0) com.getdown.fcctv.data.DebugLog.add("Video", "Waiting for camera server on $host:8554 (try ${attempt + 1}/40): ${e.message}")
                     Thread.sleep(500)
                 }
             }
@@ -109,6 +111,7 @@ class RtspFrameSource(
             input = DataInputStream(BufferedInputStream(s.getInputStream(), 65536))
             output = s.getOutputStream()
 
+            com.getdown.fcctv.data.DebugLog.add("Video", "Connected to camera server; asking for the video description")
             val description = request("DESCRIBE", base, "Accept: application/sdp\r\n")
             val contentBase = description.headers["content-base"] ?: "$base/"
             var track: String? = null
@@ -128,6 +131,7 @@ class RtspFrameSource(
                 t.startsWith("/") -> "rtsp://$host:8554$t"
                 else -> contentBase + (if (contentBase.endsWith("/")) "" else "/") + t
             }
+            com.getdown.fcctv.data.DebugLog.add("Video", "Video track $trackUrl, SPS/PPS in description: ${sps != null && pps != null}")
             val setup = request("SETUP", trackUrl, "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n")
             session = (setup.headers["session"] ?: throw IOException("RTSP SETUP returned no session")).split(";", limit = 2)[0]
             setup.headers["transport"]?.takeIf { it.contains("interleaved=") }?.let {
@@ -136,6 +140,7 @@ class RtspFrameSource(
                 if (ch.size > 1) rtcpChannel = ch[1].toInt()
             }
             request("PLAY", base, "Range: npt=0.000-\r\n")
+            com.getdown.fcctv.data.DebugLog.add("Video", "PLAY accepted; waiting for video packets")
             keepalive.scheduleAtFixedRate({
                 if (!closed) try { send("OPTIONS", base, ""); receiverReport() } catch (e: IOException) {
                     if (!closed) { listener.error("RTSP keep-alive failed: ${e.message}"); close() }
@@ -147,7 +152,7 @@ class RtspFrameSource(
                 if (SystemClock.elapsedRealtime() - lastVideo > 15_000) throw IOException("No video packets for 15 seconds")
             }
         } catch (e: Exception) {
-            if (!closed) { Log.e(TAG, "RTSP failed", e); listener.error("Live video: ${e.message ?: e.javaClass.simpleName}") }
+            if (!closed) { Log.e(TAG, "RTSP failed", e); com.getdown.fcctv.data.DebugLog.add("Video", "Failed: ${e.javaClass.simpleName}: ${e.message}"); listener.error("Live video: ${e.message ?: e.javaClass.simpleName}") }
         } finally {
             codec?.let { runCatching { it.stop() }; it.release() }
             codec = null
@@ -188,7 +193,10 @@ class RtspFrameSource(
             val channel = input.readUnsignedByte()
             val length = input.readUnsignedShort()
             val packet = ByteArray(length); input.readFully(packet)
-            if (channel == videoChannel) { lastVideo = SystemClock.elapsedRealtime(); rtp(packet) }
+            if (channel == videoChannel) {
+                if (videoPackets++ == 0L) com.getdown.fcctv.data.DebugLog.add("Video", "First video packet received (${packet.size} bytes)")
+                lastVideo = SystemClock.elapsedRealtime(); rtp(packet)
+            }
             return null
         }
         val header = ByteArrayOutputStream(); header.write(first)
@@ -275,14 +283,19 @@ class RtspFrameSource(
         if (bytes.isEmpty() || damaged || fragment != null) return
         var c = codec
         if (c == null) {
-            val s = sps ?: return
-            val pp = pps ?: return
+            if (sps == null || pps == null) {
+                if (!warnedNoSps) { warnedNoSps = true; com.getdown.fcctv.data.DebugLog.add("Video", "Got video but no SPS/PPS yet; waiting for a key frame") }
+                return
+            }
+            val s = sps!!
+            val pp = pps!!
             val format = MediaFormat.createVideoFormat("video/avc", 1600, 1200).apply {
                 setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
                 setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 4 * 1024 * 1024)
                 setByteBuffer("csd-0", annexB(s)); setByteBuffer("csd-1", annexB(pp))
             }
             c = MediaCodec.createDecoderByType("video/avc")
+            com.getdown.fcctv.data.DebugLog.add("Video", "First complete H.264 frame received; decoder ${c.name} started")
             c.configure(format, null, null, 0); c.start()
             codec = c
         }

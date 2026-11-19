@@ -162,6 +162,7 @@ object LiveController {
             while (frameTimes.size > 1 && now - frameTimes.first() > 10_000) frameTimes.removeFirst()
             if (frameTimes.size < 2) 0.0 else (frameTimes.size - 1) * 1000.0 / (now - frameTimes.first())
         }
+        if (_state.value.frames == 0L) DebugLog.add("Live", "First picture decoded (${jpeg.size / 1024} KB) — live view is working")
         _frame.value = jpeg
         _state.update {
             val n = it.frames + 1
