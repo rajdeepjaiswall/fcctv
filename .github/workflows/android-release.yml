@@ -1,0 +1,84 @@
+name: Build signed FCCTV APK
+
+on:
+  push:
+    branches: [main]
+    paths: ["android/**", ".github/workflows/android-release.yml", "signing/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Point Gradle at the runner's Android SDK
+        run: echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+      # Preferred: GitHub secrets SIGNING_KEYSTORE_B64 / SIGNING_STORE_PASSWORD / SIGNING_KEY_ALIAS /
+      # SIGNING_KEY_PASSWORD. Fallback: signing/ committed in this PRIVATE repo. The same key must be
+      # used forever, otherwise phones can't update the app.
+      - name: Prepare signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
+          STORE_PW: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          KEY_PW: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "SIGNING_STORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "SIGNING_STORE_PASSWORD=$STORE_PW" >> "$GITHUB_ENV"
+            echo "SIGNING_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "SIGNING_KEY_PASSWORD=$KEY_PW" >> "$GITHUB_ENV"
+          elif [ -f ../signing/release.jks ]; then
+            echo "SIGNING_STORE_FILE=$GITHUB_WORKSPACE/signing/release.jks" >> "$GITHUB_ENV"
+            cat ../signing/signing.env >> "$GITHUB_ENV"
+          else
+            echo "::warning::No signing key found; the APK will be debug-signed."
+          fi
+          echo "VERSION_CODE=${{ github.run_number }}" >> "$GITHUB_ENV"
+
+      - name: Build release APK
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon assembleRelease 2>&1 | tee build.log || {
+            grep -E "^e: |error:|What went wrong|FAILURE|Could not|> " build.log | head -40 | while IFS= read -r line; do
+              echo "::error::${line//%/%25}"
+            done
+            exit 1
+          }
+
+      - name: Rename APK
+        run: |
+          mkdir -p ../out
+          cp app/build/outputs/apk/release/*.apk "../out/FCCTV-v0.1.${{ github.run_number }}.apk"
+          ls -la ../out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FCCTV-apk
+          path: out/*.apk
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.${{ github.run_number }}
+          name: FCCTV v0.1.${{ github.run_number }}
+          files: out/*.apk
+          body: |
+            FCCTV by Get Down Foundation — worker app.
+            Install: open this page on the Android phone, tap the .apk, allow "Install unknown apps".
